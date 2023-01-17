@@ -1,0 +1,10 @@
+[workspace]
+members = [ "common", "lib", "wasm" ]
+exclude =  [ "tests" ]
+resolver = "2" # https://github.com/wasmerio/wasmer/issues/3377
+
+[profile.bench]
+debug = true
+
+[profile.release]
+debug = true

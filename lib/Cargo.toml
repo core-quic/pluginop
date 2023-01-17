@@ -1,0 +1,19 @@
+[package]
+name = "pluginop"
+version = "0.1.0"
+authors = ["Quentin De Coninck <quentin.deconinck@uclouvain.be>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = { version = "0.4", features = ["std"] }
+# Let use the single pass compiler, which is much faster than others
+wasmer = "3"
+wasmer-compiler-singlepass = "3"
+# Handle possible WASI plugins
+wasmer-wasi = "3"
+pluginop-common = { path = "../common" }
+bincode = "1"
+fnv = "1"
+getrandom = "0.2"
