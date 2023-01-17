@@ -81,7 +81,7 @@ unsafe impl<T: ?Sized> Sync for RawPtr<T> {}
 pub struct Env<P: PluginizableConnection> {
     /// The raw pointer to the plugin handler. Because `PluginHandler` is pinned,
     /// this is safe.
-    ph: RawPtr<PluginHandler<P>>,
+    _ph: RawPtr<PluginHandler<P>>,
     /// The set of internal field permissions granted to the plugin.
     permissions: BTreeSet<Permission>,
     /// Whether the associated plugin was initialized or not.
@@ -90,13 +90,13 @@ pub struct Env<P: PluginizableConnection> {
 
 pub(crate) fn create_env<P: PluginizableConnection>(ph: *const PluginHandler<P>) -> Env<P> {
     Env {
-        ph: RawPtr { inner: ph },
+        _ph: RawPtr { inner: ph },
         permissions: BTreeSet::new(),
         initialized: false,
     }
 }
 
-impl<'a, 'b, P: PluginizableConnection> Env<P> {
+impl<P: PluginizableConnection> Env<P> {
     fn sanitize(&mut self) { /* Placeholder */
     }
 }
@@ -106,14 +106,14 @@ impl<'a, 'b, P: PluginizableConnection> Env<P> {
 #[derive(Debug)]
 pub(crate) struct Plugin<P: PluginizableConnection> {
     /// The actual WASM instance.
-    instance: Pin<Box<Instance>>,
+    _instance: Pin<Box<Instance>>,
     // The environment accessible to plugins.
     env: FunctionEnv<Env<P>>,
     /// A hash table to the functions contained in the instance.
     pocodes: Pin<Box<FnvHashMap<ProtoOp, POCode>>>,
 }
 
-impl<'a, P: PluginizableConnection> Plugin<P> {
+impl<P: PluginizableConnection> Plugin<P> {
     /// Creates a new `Plugin` instance.
     pub fn new(
         plugin_fname: &PathBuf,
@@ -128,19 +128,17 @@ impl<'a, P: PluginizableConnection> Plugin<P> {
                 match Instance::new(store, &module, imports) {
                     Ok(instance) => {
                         // XXX We could update the permissions later.
-
-                        /* let permissions = */
-                        env.as_mut(store).permissions.insert(Permission::Output);
-                        // permissions.insert(Permission::Output);
-                        // permissions.insert(Permission::Opaque);
-                        // permissions.insert(Permission::ConnectionAccess);
-                        // permissions.insert(Permission::WriteBuffer);
-                        // permissions.insert(Permission::ReadBuffer);
+                        let permissions = &mut env.as_mut(store).permissions;
+                        permissions.insert(Permission::Output);
+                        permissions.insert(Permission::Opaque);
+                        permissions.insert(Permission::ConnectionAccess);
+                        permissions.insert(Permission::WriteBuffer);
+                        permissions.insert(Permission::ReadBuffer);
 
                         let pocodes = Plugin::<P>::get_pocodes(&instance);
 
                         return Some(Plugin {
-                            instance: Box::pin(instance),
+                            _instance: Box::pin(instance),
                             env,
                             pocodes: Box::pin(pocodes),
                         });

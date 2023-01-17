@@ -24,7 +24,6 @@ pub enum Error {
 #[cfg(test)]
 mod tests {
     use std::{
-        cell::RefCell,
         sync::{Arc, RwLock, Weak},
     };
 

@@ -1,7 +1,6 @@
 use std::{
-    any::Any,
-    collections::BTreeSet,
     marker::PhantomPinned,
+    ops::{Deref, DerefMut},
     path::PathBuf,
     pin::Pin,
     sync::{Arc, Mutex},
@@ -24,6 +23,29 @@ fn create_store() -> Store {
     Store::new(engine)
 }
 
+/// A pinned `Vec` of plugins.
+#[derive(Debug)]
+struct PluginArray<P: PluginizableConnection> {
+    /// The inner array.
+    array: Vec<Plugin<P>>,
+    /// Force this structure to be pinned.
+    _pin: PhantomPinned,
+}
+
+impl<P: PluginizableConnection> Deref for PluginArray<P> {
+    type Target = Vec<Plugin<P>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.array
+    }
+}
+
+impl<P: PluginizableConnection> DerefMut for PluginArray<P> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.array
+    }
+}
+
 pub struct PluginHandler<P: PluginizableConnection> {
     /// The store that served to instantiate plugins.
     store: Arc<Mutex<Store>>,
@@ -32,7 +54,7 @@ pub struct PluginHandler<P: PluginizableConnection> {
     /// Function creating an `Imports`.
     imports_func: fn(&mut Store, &FunctionEnv<Env<P>>) -> Imports,
     /// The actual container of the plugins.
-    plugins: Pin<Box<Vec<Plugin<P>>>>,
+    plugins: Pin<PluginArray<P>>,
     /// Opaque value provided as argument to the plugin.
     plugin_state: u32,
     /// Force this structure to be pinned.
@@ -69,12 +91,12 @@ pub struct InternalArgs;
 
 /// A default implementation of a protocol operation proposed by the host implementation.
 pub struct ProtocolOperationDefault {
-    po: ProtoOp,
-    default_fn: fn(InternalArgs, &[Value]) -> Box<dyn Any>,
+    // po: ProtoOp,
+    // default_fn: fn(InternalArgs, &[Value]) -> Box<dyn Any>,
     // return_type: POReturnType,
-    named_args: Vec<&'static str>,
-    named_refs: Vec<&'static str>,
-    named_muts: Vec<&'static str>,
+    // named_args: Vec<&'static str>,
+    // named_refs: Vec<&'static str>,
+    // named_muts: Vec<&'static str>,
     // use_transient: UseTransientStructs,
 }
 
@@ -86,7 +108,10 @@ impl<P: PluginizableConnection> PluginHandler<P> {
             store: Arc::new(Mutex::new(create_store())),
             conn: RawPtr::null(),
             imports_func,
-            plugins: Box::pin(Vec::new()),
+            plugins: Pin::new(PluginArray {
+                array: Vec::new(),
+                _pin: PhantomPinned,
+            }),
             plugin_state: u32::from_be_bytes(plugin_state),
             _pin: PhantomPinned,
         }
@@ -128,21 +153,17 @@ impl<P: PluginizableConnection> PluginHandler<P> {
 
     /// Returns `true` iif one of the plugins provides an implementation for the requested `po`.
     pub fn provides(&self, po: &ProtoOp, anchor: Anchor) -> bool {
-        for p in self.plugins.iter() {
-            if let Some(_) = p.get_func(po, anchor) {
-                return true;
-            }
-        }
-        false
+        self.plugins
+            .iter()
+            .any(|p| p.get_func(po, anchor).is_some())
     }
 
     /// Returns the first plugin that provides an implementation for `po` with the implementing
     /// function, or `None` if there is not.
     fn get_first_plugin(&self, po: &ProtoOp) -> Option<(&Plugin<P>, &Function)> {
         for p in self.plugins.iter() {
-            match p.get_func(po, Anchor::Replace) {
-                Some(func) => return Some((p, func)),
-                None => {}
+            if let Some(func) = p.get_func(po, Anchor::Replace) {
+                return Some((p, func));
             }
         }
         None
@@ -156,7 +177,7 @@ impl<P: PluginizableConnection> PluginHandler<P> {
         params: &[Value],
         mut before_call: B,
         after_call: A,
-        mut internal_args: InternalArgs,
+        _internal_args: InternalArgs,
     ) -> Result<R, Error>
     where
         B: FnMut(&Env<P>),
@@ -175,9 +196,8 @@ impl<P: PluginizableConnection> PluginHandler<P> {
 
         // PRE part
         for p in self.plugins.iter() {
-            match p.get_func(po, Anchor::Pre) {
-                Some(func) => p.call(store, func, params, &mut before_call, |_, _| {})?,
-                None => {}
+            if let Some(func) = p.get_func(po, Anchor::Pre) {
+                p.call(store, func, params, &mut before_call, |_, _| {})?;
             }
         }
 
@@ -186,7 +206,7 @@ impl<P: PluginizableConnection> PluginHandler<P> {
             Some((p, func)) => p.call(store, func, params, &mut before_call, after_call)?,
             None => {
                 match pod {
-                    Some(pod) => {
+                    Some(_pod) => {
                         todo!()
                         // Gives back both transient arguments and named arguments.
                         // {
@@ -207,9 +227,8 @@ impl<P: PluginizableConnection> PluginHandler<P> {
 
         // POST part
         for p in self.plugins.iter() {
-            match p.get_func(po, Anchor::Post) {
-                Some(func) => p.call(store, func, params, &mut before_call, |_, _| {})?,
-                None => {}
+            if let Some(func) = p.get_func(po, Anchor::Post) {
+                p.call(store, func, params, &mut before_call, |_, _| {})?;
             }
         }
 
@@ -250,7 +269,7 @@ impl<P: PluginizableConnection> PluginHandler<P> {
         // TODO
         // let pod = self.default_protocol_operations.get(po);
 
-        if params.len() > 0 {
+        if !params.is_empty() {
             todo!("handle params")
         }
 

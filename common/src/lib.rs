@@ -69,17 +69,17 @@ pub enum Anchor {
 }
 
 fn extract_po_param(name: &str) -> Result<u64, ParseIntError> {
-    let end_num = &name[name.rfind("_").unwrap() + 1..];
+    let end_num = &name[name.rfind('_').unwrap() + 1..];
     u64::from_str_radix(end_num, 16)
 }
 
 impl ProtoOp {
     // FIXME find a more idiomatic way
     pub fn from_name(name: &str) -> (ProtoOp, Anchor) {
-        let (name, anchor) = if name.starts_with("pre_") {
-            (&name[4..], Anchor::Pre)
-        } else if name.starts_with("post_") {
-            (&name[5..], Anchor::Post)
+        let (name, anchor) = if let Some(po_name) = name.strip_prefix("pre_") {
+            (po_name, Anchor::Pre)
+        } else if let Some(po_name) = name.strip_prefix("post_") {
+            (po_name, Anchor::Post)
         } else {
             (name, Anchor::Replace)
         };
@@ -219,6 +219,7 @@ impl From<f64> for PluginVal {
 }
 
 /// Inputs that can be passed to protocol operations.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Input {
     /// A duration.

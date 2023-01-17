@@ -157,8 +157,8 @@ pub fn buffer_get_varint() -> (i64, u64) {
     match l {
         0 => {}
         1 => val2.push(0),
-        2 => val2.extend_from_slice(&vec![0; 3]),
-        3 => val2.extend_from_slice(&vec![0; 7]),
+        2 => val2.extend_from_slice(&[0; 3]),
+        3 => val2.extend_from_slice(&[0; 7]),
         _ => unreachable!(),
     };
     let read2 = buffer_get_bytes(&mut val2);
@@ -190,7 +190,7 @@ pub fn buffer_get_varint() -> (i64, u64) {
         0 => val[0].into(),
         1 => u16::from_be_bytes(val[0..2].try_into().unwrap()).into(),
         2 => u32::from_be_bytes(val[0..4].try_into().unwrap()).into(),
-        3 => u64::from_be_bytes(val[0..8].try_into().unwrap()).into(),
+        3 => u64::from_be_bytes(val[0..8].try_into().unwrap()),
         _ => unreachable!(),
     };
     (read + read2, v)
@@ -200,16 +200,16 @@ pub fn buffer_get_varint() -> (i64, u64) {
 pub fn buffer_put_varint(v: u64) -> i64 {
     let mut vb = v.to_be_bytes();
     let write_bytes: Vec<u8> = if v < 64 {
-        (&vb[7..8]).iter().map(|b| *b).collect()
+        vb[7..8].to_vec()
     } else if v < 16384 {
         vb[6] |= 0x40;
-        (&vb[6..8]).iter().map(|b| *b).collect()
+        vb[6..8].to_vec()
     } else if v < 1073741824 {
         vb[4] |= 0x80;
-        (&vb[4..8]).iter().map(|b| *b).collect()
+        vb[4..8].to_vec()
     } else {
         vb[0] |= 0xc0;
-        (&vb[0..8]).iter().map(|b| *b).collect()
+        vb[0..8].to_vec()
     };
     buffer_put_bytes(&write_bytes)
 }
@@ -235,7 +235,7 @@ where
             SIZE as u32,
         );
     }
-    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE as usize) };
+    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
     bincode::deserialize(slice).expect("the requested type is not correct")
 }
 
@@ -271,7 +271,7 @@ where
             SIZE as u32,
         );
     }
-    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE as usize) };
+    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
     bincode::deserialize(slice).expect("no error")
 }
 
@@ -308,7 +308,7 @@ where
             SIZE as u32,
         );
     }
-    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE as usize) };
+    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
     bincode::deserialize(slice).expect("no error")
 }
 
@@ -328,7 +328,7 @@ where
             SIZE as u32,
         );
     }
-    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE as usize) };
+    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
     bincode::deserialize(slice).expect("no error")
 }
 
@@ -350,7 +350,7 @@ pub fn call_protoop(po: ProtoOp, args: Vec<PluginVal>, inputs: Vec<Input>) -> Ve
             SIZE as u32,
         );
     }
-    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE as usize) };
+    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
     bincode::deserialize(slice).expect("no error")
 }
 
@@ -359,7 +359,7 @@ pub fn get_current_time() -> Instant {
     unsafe {
         get_current_time_from_plugin(res.as_mut_ptr() as u32, SIZE as u32);
     }
-    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE as usize) };
+    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
     bincode::deserialize(slice).expect("no error")
 }
 
@@ -383,7 +383,7 @@ where
     unsafe {
         get_input_from_plugin(index, res.as_mut_ptr() as u32, SIZE as u32);
     }
-    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE as usize) };
+    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
     let input: Input = bincode::deserialize(slice).expect("no error");
     input.try_into().expect("cannot convert to wanted type")
 }
@@ -393,7 +393,7 @@ pub fn get_time() -> unix_time::Instant {
     unsafe {
         get_time_from_plugin(res.as_mut_ptr() as u32, SIZE as u32);
     }
-    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE as usize) };
+    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
     bincode::deserialize(slice).expect("no error")
 }
 
@@ -405,7 +405,7 @@ pub fn generate_connection_id() -> Option<ConnectionId> {
     if err != 0 {
         return None;
     }
-    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE as usize) };
+    let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
     let cid: ConnectionId = bincode::deserialize(slice).expect("no error");
     Some(cid)
 }
