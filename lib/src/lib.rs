@@ -23,12 +23,10 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::{Arc, RwLock, Weak},
-    };
+    use std::sync::{Arc, RwLock, Weak};
 
     use pluginop_common::quic::{ConnectionField, RecoveryField};
-    use wasmer::{imports, FunctionEnv, FunctionEnvMut, Imports, Store};
+    use wasmer::{Exports, FunctionEnv, FunctionEnvMut, Store};
 
     use crate::{api::ConnectionToPlugin, handler::InternalArgs, plugin::Env};
 
@@ -86,23 +84,18 @@ mod tests {
         x + 1
     }
 
-    fn imports_func_external_test<P: PluginizableConnection>(
+    fn exports_func_external_test<P: PluginizableConnection>(
         store: &mut Store,
         env: &FunctionEnv<Env<P>>,
-    ) -> Imports {
-        imports!(
-            // Define the "env" namespace that was implicitly used
-            // by our sample application.
-            "env" => {
-                "add_one" => Function::new_typed_with_env(store, env, add_one),
-                // "call_proto_op_from_plugin" => Function::new_native_with_env(store, env, api::call_proto_op_from_plugin),
-            },
-        )
+    ) -> Exports {
+        let mut exports = Exports::new();
+        exports.insert("add_one", Function::new_typed_with_env(store, env, add_one));
+        exports
     }
 
     impl PluginizableConnectionDummy {
         fn new(
-            imports_func: fn(&mut Store, &FunctionEnv<Env<Self>>) -> Imports,
+            exports_func: fn(&mut Store, &FunctionEnv<Env<Self>>) -> Exports,
         ) -> Arc<RwLock<Self>> {
             let ret = Arc::new(RwLock::new(PluginizableConnectionDummy {
                 ph: None,
@@ -110,7 +103,7 @@ mod tests {
             }));
             {
                 let mut locked_ret = ret.write().unwrap();
-                locked_ret.ph = Some(PluginHandler::new(imports_func));
+                locked_ret.ph = Some(PluginHandler::new(exports_func));
                 locked_ret.conn.set_pluginizable_conn(&ret);
             }
             ret
@@ -123,7 +116,7 @@ mod tests {
 
     #[test]
     fn simple_wasm() {
-        let pcd = PluginizableConnectionDummy::new(imports_func_external_test);
+        let pcd = PluginizableConnectionDummy::new(exports_func_external_test);
         let path = "../tests/simple-wasm/simple_wasm.wasm".to_string();
         let mut locked_pcd = pcd.write().unwrap();
         let pcd_ptr = &*locked_pcd as *const _;
@@ -142,6 +135,11 @@ mod tests {
         assert!(res.is_some());
         let res = res.unwrap();
         assert_eq!(res, 42);
+    }
+
+    #[test]
+    fn memory_allocation() {
+        todo!()
     }
 }
 

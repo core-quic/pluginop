@@ -283,7 +283,4 @@ impl TryFrom<Input> for SocketAddr {
     }
 }
 
-#[repr(C)]
-pub struct PluginEnv(u64);
-
 pub mod quic;

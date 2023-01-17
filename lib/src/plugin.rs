@@ -1,15 +1,19 @@
 use std::{
     collections::BTreeSet,
     fmt::{Debug, Pointer},
-    ops::Deref,
+    marker::PhantomPinned,
+    ops::{Deref, DerefMut},
     path::PathBuf,
     pin::Pin,
+    sync::{Arc, Weak},
 };
 
 use fnv::FnvHashMap;
 use log::error;
 use pluginop_common::{Anchor, ProtoOp};
-use wasmer::{Function, FunctionEnv, Imports, Instance, Module, Store, Value};
+use wasmer::{
+    Function, FunctionEnv, Imports, Instance, Module, Store, Value,
+};
 
 use crate::{
     handler::{Permission, PluginHandler},
@@ -77,27 +81,67 @@ unsafe impl<T: ?Sized> Send for RawPtr<T> {}
 // SAFETY: Only true if T is pinned.
 unsafe impl<T: ?Sized> Sync for RawPtr<T> {}
 
+#[derive(Debug, Default)]
+pub struct OutputArray {
+    inner: Vec<Vec<u8>>,
+    _pin: PhantomPinned,
+}
+
+impl Deref for OutputArray {
+    type Target = Vec<Vec<u8>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for OutputArray {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
 #[derive(Debug)]
 pub struct Env<P: PluginizableConnection> {
     /// The raw pointer to the plugin handler. Because `PluginHandler` is pinned,
     /// this is safe.
     _ph: RawPtr<PluginHandler<P>>,
+    /// The (weak) reference to the instance of the plugin. The value is set when
+    instance: Weak<Pin<Box<Instance>>>,
     /// The set of internal field permissions granted to the plugin.
     permissions: BTreeSet<Permission>,
     /// Whether the associated plugin was initialized or not.
     initialized: bool,
+    /// Enables a plugin to output more than one (serializable) value, as returning more than 1
+    /// output in a function is not FFI safe.
+    pub outputs: Pin<OutputArray>,
+    /// Store for opaque values used by the plugin. Typically, it contains pointers, and WASM
+    /// pointers are 32-bit values.
+    pub opaque_values: Pin<Box<FnvHashMap<u64, u32>>>,
 }
 
 pub(crate) fn create_env<P: PluginizableConnection>(ph: *const PluginHandler<P>) -> Env<P> {
     Env {
         _ph: RawPtr { inner: ph },
+        instance: Weak::new(),
         permissions: BTreeSet::new(),
         initialized: false,
+        outputs: Pin::new(OutputArray::default()),
+        opaque_values: Box::pin(FnvHashMap::default()),
     }
 }
 
 impl<P: PluginizableConnection> Env<P> {
     fn sanitize(&mut self) { /* Placeholder */
+    }
+
+    fn _get_ph(&self) -> &PluginHandler<P> {
+        // SAFETY: This is valid since `PluginHandler` is pinned and cannot be moved.
+        unsafe { &**self._ph }
+    }
+
+    pub fn get_instance(&self) -> Arc<Pin<Box<Instance>>> {
+        self.instance.upgrade().unwrap()
     }
 }
 
@@ -106,7 +150,7 @@ impl<P: PluginizableConnection> Env<P> {
 #[derive(Debug)]
 pub(crate) struct Plugin<P: PluginizableConnection> {
     /// The actual WASM instance.
-    _instance: Pin<Box<Instance>>,
+    instance: Arc<Pin<Box<Instance>>>,
     // The environment accessible to plugins.
     env: FunctionEnv<Env<P>>,
     /// A hash table to the functions contained in the instance.
@@ -138,7 +182,7 @@ impl<P: PluginizableConnection> Plugin<P> {
                         let pocodes = Plugin::<P>::get_pocodes(&instance);
 
                         return Some(Plugin {
-                            _instance: Box::pin(instance),
+                            instance: Arc::new(Box::pin(instance)),
                             env,
                             pocodes: Box::pin(pocodes),
                         });
@@ -201,6 +245,9 @@ impl<P: PluginizableConnection> Plugin<P> {
     pub(crate) fn initialize(&self, store: &mut Store) {
         let env_mut = self.env.as_mut(store);
         env_mut.initialized = true;
+
+        // Set now the instance backpointer.
+        env_mut.instance = Arc::<Pin<Box<Instance>>>::downgrade(&self.instance);
 
         // And call a potential `init` method provided by the plugin.
         let po = ProtoOp::Init;

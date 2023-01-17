@@ -11,7 +11,7 @@ use pluginop_common::{
     quic::{ConnectionField, RecoveryField},
     ProtoOp,
 };
-use wasmer::{imports, Function, FunctionEnv, FunctionEnvMut, Imports, Store};
+use wasmer::{imports, Exports, Function, FunctionEnv, FunctionEnvMut, Imports, Store};
 
 /// Dummy object
 #[derive(Debug)]
@@ -65,29 +65,24 @@ fn add_one<P: PluginizableConnection>(_: FunctionEnvMut<Env<P>>, x: u64) -> u64 
     x + 1
 }
 
-fn imports_func_external_test<P: PluginizableConnection>(
+fn exports_func_external_test<P: PluginizableConnection>(
     store: &mut Store,
     env: &FunctionEnv<Env<P>>,
-) -> Imports {
-    imports!(
-        // Define the "env" namespace that was implicitly used
-        // by our sample application.
-        "env" => {
-            "add_one" => Function::new_typed_with_env(store, env, add_one),
-            // "call_proto_op_from_plugin" => Function::new_native_with_env(store, env, api::call_proto_op_from_plugin),
-        },
-    )
+) -> Exports {
+    let mut exports = Exports::new();
+    exports.insert("add_one", Function::new_typed_with_env(store, env, add_one));
+    exports
 }
 
 impl PluginizableConnectionDummy {
-    fn new(imports_func: fn(&mut Store, &FunctionEnv<Env<Self>>) -> Imports) -> Arc<RwLock<Self>> {
+    fn new(exports_func: fn(&mut Store, &FunctionEnv<Env<Self>>) -> Exports) -> Arc<RwLock<Self>> {
         let ret = Arc::new(RwLock::new(PluginizableConnectionDummy {
             ph: None,
             conn: ConnectionDummy { pc: None },
         }));
         {
             let mut locked_ret = ret.write().unwrap();
-            locked_ret.ph = Some(PluginHandler::new(imports_func));
+            locked_ret.ph = Some(PluginHandler::new(exports_func));
             locked_ret.conn.set_pluginizable_conn(&ret);
         }
         ret
@@ -99,7 +94,7 @@ impl PluginizableConnectionDummy {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let pcd = PluginizableConnectionDummy::new(imports_func_external_test);
+    let pcd = PluginizableConnectionDummy::new(exports_func_external_test);
     let path = "../tests/simple-wasm/simple_wasm.wasm".to_string();
     let mut locked_pcd = pcd.write().unwrap();
     let pcd_ptr = &*locked_pcd as *const _;
