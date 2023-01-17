@@ -1,11 +1,20 @@
-use std::{pin::Pin, path::PathBuf, collections::BTreeSet, ops::Deref, fmt::{Debug, Pointer}};
+use std::{
+    collections::BTreeSet,
+    fmt::{Debug, Pointer},
+    ops::Deref,
+    path::PathBuf,
+    pin::Pin,
+};
 
-use log::error;
-use pluginop_common::{ProtoOp, Anchor};
-use wasmer::{Instance, Store, FunctionEnv, Imports, Module, Function, Value};
 use fnv::FnvHashMap;
+use log::error;
+use pluginop_common::{Anchor, ProtoOp};
+use wasmer::{Function, FunctionEnv, Imports, Instance, Module, Store, Value};
 
-use crate::{POCode, handler::{Permission, PluginHandler}, PluginizableConnection, Error};
+use crate::{
+    handler::{Permission, PluginHandler},
+    Error, POCode, PluginizableConnection,
+};
 
 pub struct RawPtr<T: ?Sized> {
     inner: *const T,
@@ -80,11 +89,16 @@ pub struct Env<P: PluginizableConnection> {
 }
 
 pub(crate) fn create_env<P: PluginizableConnection>(ph: *const PluginHandler<P>) -> Env<P> {
-    Env { ph: RawPtr { inner: ph }, permissions: BTreeSet::new(), initialized: false }
+    Env {
+        ph: RawPtr { inner: ph },
+        permissions: BTreeSet::new(),
+        initialized: false,
+    }
 }
 
 impl<'a, 'b, P: PluginizableConnection> Env<P> {
-    fn sanitize(&mut self) { /* Placeholder */}
+    fn sanitize(&mut self) { /* Placeholder */
+    }
 }
 
 /// Structure holding the state of an inserted plugin. Because all the useful state is hold in the
@@ -102,7 +116,10 @@ pub(crate) struct Plugin<P: PluginizableConnection> {
 impl<'a, P: PluginizableConnection> Plugin<P> {
     /// Creates a new `Plugin` instance.
     pub fn new(
-        plugin_fname: &PathBuf, store: &mut Store, env: FunctionEnv<Env<P>>, imports: &Imports,
+        plugin_fname: &PathBuf,
+        store: &mut Store,
+        env: FunctionEnv<Env<P>>,
+        imports: &Imports,
     ) -> Option<Self> {
         match std::fs::read(plugin_fname) {
             Ok(wasm) => {
@@ -112,7 +129,8 @@ impl<'a, P: PluginizableConnection> Plugin<P> {
                     Ok(instance) => {
                         // XXX We could update the permissions later.
 
-                        /* let permissions = */ env.as_mut(store).permissions.insert(Permission::Output);
+                        /* let permissions = */
+                        env.as_mut(store).permissions.insert(Permission::Output);
                         // permissions.insert(Permission::Output);
                         // permissions.insert(Permission::Opaque);
                         // permissions.insert(Permission::ConnectionAccess);
@@ -126,15 +144,15 @@ impl<'a, P: PluginizableConnection> Plugin<P> {
                             env,
                             pocodes: Box::pin(pocodes),
                         });
-                    },
+                    }
                     Err(e) => {
                         error!("Cannot instantiate plugin: {}", e);
-                    },
+                    }
                 }
-            },
+            }
             Err(e) => {
                 error!("Cannot read plugin: {}", e);
-            },
+            }
         }
         None
     }
@@ -148,13 +166,11 @@ impl<'a, P: PluginizableConnection> Plugin<P> {
 
                 let (po, a) = ProtoOp::from_name(name);
                 match pocodes.get_mut(&po) {
-                    Some(poc) => {
-                        match a {
-                            Anchor::Pre => poc.pre = Some(func),
-                            Anchor::Replace => poc.replace = Some(func),
-                            Anchor::Post => poc.post = Some(func),
-                        }
-                    }
+                    Some(poc) => match a {
+                        Anchor::Pre => poc.pre = Some(func),
+                        Anchor::Replace => poc.replace = Some(func),
+                        Anchor::Post => poc.post = Some(func),
+                    },
                     None => {
                         let mut poc = POCode::default();
                         match a {
@@ -191,13 +207,19 @@ impl<'a, P: PluginizableConnection> Plugin<P> {
         // And call a potential `init` method provided by the plugin.
         let po = ProtoOp::Init;
         if let Some(func) = self.get_func(&po, Anchor::Replace) {
-            self.call(store, func, &[], &mut |_| {}, |_, _| {}).expect("error in init");
+            self.call(store, func, &[], &mut |_| {}, |_, _| {})
+                .expect("error in init");
         }
     }
 
     /// Invokes the function called `function_name` with provided `params`.
     pub fn call<B, A, R>(
-        &self, store: &mut Store, func: &Function, params: &[Value], before_call: &mut B, mut after_call: A,
+        &self,
+        store: &mut Store,
+        func: &Function,
+        params: &[Value],
+        before_call: &mut B,
+        mut after_call: A,
     ) -> Result<R, Error>
     where
         B: FnMut(&Env<P>),

@@ -17,3 +17,10 @@ pluginop-common = { path = "../common" }
 bincode = "1"
 fnv = "1"
 getrandom = "0.2"
+
+[dev-dependencies]
+criterion = "0.4"
+
+[[bench]]
+name = "benchmarks"
+harness = false

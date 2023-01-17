@@ -1,4 +1,7 @@
-use std::{io::{Read, Write}, path::Path};
+use std::{
+    io::{Read, Write},
+    path::Path,
+};
 
 use serde::Serialize;
 use std::convert::TryFrom;
@@ -30,7 +33,10 @@ impl FileDescriptor {
             fd if fd >= 0 => Ok(FileDescriptor {
                 fd: FileDescriptorType::File(fd),
             }),
-            _ => Err(std::io::Error::new(std::io::ErrorKind::Other, "Cannot create file")),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Cannot create file",
+            )),
         }
     }
 }
@@ -45,14 +51,18 @@ impl Write for FileDescriptor {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self.fd {
             FileDescriptorType::File(fd) => {
-                match u32::try_from( unsafe { write_file_from_plugin(fd, buf.as_ptr() as u32, buf.len() as u32) } ) {
+                match u32::try_from(unsafe {
+                    write_file_from_plugin(fd, buf.as_ptr() as u32, buf.len() as u32)
+                }) {
                     Ok(written) => Ok(written as usize),
-                    Err(_) => Err(std::io::Error::new(std::io::ErrorKind::Other, "error when writing")),
+                    Err(_) => Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "error when writing",
+                    )),
                 }
-            },
+            }
             FileDescriptorType::Network => todo!("write not implemented on network"),
         }
-
     }
 
     fn flush(&mut self) -> std::io::Result<()> {

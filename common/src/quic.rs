@@ -1,10 +1,7 @@
 use std::{convert::TryFrom, net::SocketAddr};
 use unix_time::Instant;
 
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 
 use crate::{ConversionError, Input};
 
@@ -54,8 +51,8 @@ pub enum Registration {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[repr(usize)]
 pub enum KPacketNumberSpace {
-    Initial         = 0,
-    Handshake       = 1,
+    Initial = 0,
+    Handshake = 1,
     ApplicationData = 2,
 }
 

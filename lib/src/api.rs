@@ -1,8 +1,8 @@
-use std::sync::{Arc, Weak, RwLock};
+use std::sync::{Arc, RwLock, Weak};
 
-use pluginop_common::{quic::{ConnectionField, RecoveryField}};
+use pluginop_common::quic::{ConnectionField, RecoveryField};
 
-use crate::{PluginizableConnection};
+use crate::PluginizableConnection;
 
 /// A trait that needs to be implemented by the host implementation to provide
 /// plugins information from the host.

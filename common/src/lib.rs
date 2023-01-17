@@ -1,12 +1,9 @@
 //! Sub-crate of `protocol-operation` containing structures needed for operations of both the
 //! host instance and the plugin ones.
 
-use serde::{
-    Deserialize,
-    Serialize,
-};
-use unix_time::Instant;
+use serde::{Deserialize, Serialize};
 use std::{hash::Hash, net::SocketAddr, num::ParseIntError, time::Duration};
+use unix_time::Instant;
 
 #[derive(Clone, Debug)]
 pub enum ConversionError {
@@ -99,7 +96,7 @@ impl ProtoOp {
                 Ok(version) => match u32::try_from(version) {
                     Ok(version) => (ProtoOp::ProcessLongHeader(version), anchor),
                     Err(_) => panic!("Invalid protocol operation name"),
-                }
+                },
                 Err(_) => panic!("Invalid protocol operation name"),
             }
         } else if name.starts_with("process_short_header_") {
@@ -107,7 +104,7 @@ impl ProtoOp {
                 Ok(version) => match u32::try_from(version) {
                     Ok(version) => (ProtoOp::ProcessShortHeader(version), anchor),
                     Err(_) => panic!("Invalid protocol operation name"),
-                }
+                },
                 Err(_) => panic!("Invalid protocol operation name"),
             }
         } else if name == "process_version_negotiation" {
@@ -231,7 +228,7 @@ pub enum Input {
     /// A socket address.
     SocketAddr(SocketAddr),
     /// QUIC specific inputs.
-    QUIC(quic::QInput)
+    QUIC(quic::QInput),
 }
 
 impl From<Duration> for Input {

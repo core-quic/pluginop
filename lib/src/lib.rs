@@ -3,8 +3,7 @@ use pluginop_common::ProtoOp;
 use wasmer::{Function, RuntimeError};
 
 #[derive(Debug, Default)]
-pub struct POCode
-{
+pub struct POCode {
     pre: Option<Function>,
     replace: Option<Function>,
     post: Option<Function>,
@@ -24,18 +23,23 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, sync::{RwLock, Weak, Arc}};
+    use std::{
+        cell::RefCell,
+        sync::{Arc, RwLock, Weak},
+    };
 
-    use pluginop_common::quic::{RecoveryField, ConnectionField};
-    use wasmer::{Store, imports, FunctionEnvMut, FunctionEnv, Imports};
+    use pluginop_common::quic::{ConnectionField, RecoveryField};
+    use wasmer::{imports, FunctionEnv, FunctionEnvMut, Imports, Store};
 
-    use crate::{api::ConnectionToPlugin, plugin::Env, handler::InternalArgs};
+    use crate::{api::ConnectionToPlugin, handler::InternalArgs, plugin::Env};
 
     use super::*;
 
     /// Dummy object
     #[derive(Debug)]
-    struct ConnectionDummy { pc: Option<Weak<RwLock<PluginizableConnectionDummy>>> }
+    struct ConnectionDummy {
+        pc: Option<Weak<RwLock<PluginizableConnectionDummy>>>,
+    }
 
     impl api::ConnectionToPlugin<'_, PluginizableConnectionDummy> for ConnectionDummy {
         fn get_recovery(&self, _: &mut [u8], _: RecoveryField) -> bincode::Result<()> {
@@ -83,7 +87,10 @@ mod tests {
         x + 1
     }
 
-    fn imports_func_external_test<P: PluginizableConnection>(store: &mut Store, env: &FunctionEnv<Env<P>>) -> Imports {
+    fn imports_func_external_test<P: PluginizableConnection>(
+        store: &mut Store,
+        env: &FunctionEnv<Env<P>>,
+    ) -> Imports {
         imports!(
             // Define the "env" namespace that was implicitly used
             // by our sample application.
@@ -95,7 +102,9 @@ mod tests {
     }
 
     impl PluginizableConnectionDummy {
-        fn new(imports_func: fn (&mut Store, &FunctionEnv<Env<Self>>) -> Imports) -> Arc<RwLock<Self>> {
+        fn new(
+            imports_func: fn(&mut Store, &FunctionEnv<Env<Self>>) -> Imports,
+        ) -> Arc<RwLock<Self>> {
             let ret = Arc::new(RwLock::new(PluginizableConnectionDummy {
                 ph: None,
                 conn: ConnectionDummy { pc: None },
@@ -118,7 +127,7 @@ mod tests {
         let pcd = PluginizableConnectionDummy::new(imports_func_external_test);
         let path = "../tests/simple-wasm/simple_wasm.wasm".to_string();
         let mut locked_pcd = pcd.write().unwrap();
-        let pcd_ptr = & *locked_pcd as *const _;
+        let pcd_ptr = &*locked_pcd as *const _;
         let ok = locked_pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
         assert!(ok);
         let (po, a) = ProtoOp::from_name("simple_call");
@@ -139,4 +148,4 @@ mod tests {
 
 pub mod api;
 pub mod handler;
-mod plugin;
+pub mod plugin;
