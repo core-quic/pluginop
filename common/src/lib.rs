@@ -152,17 +152,17 @@ impl ProtoOp {
         } else if name.starts_with("wire_len_") {
             match extract_po_param(name) {
                 Ok(frame_type) => (ProtoOp::WireLen(frame_type), anchor),
-                Err(e) => panic!("Invalid protocol operation name: {}", e),
+                Err(e) => panic!("Invalid protocol operation name: {e}"),
             }
         } else if name.starts_with("write_frame_") {
             match extract_po_param(name) {
                 Ok(frame_type) => (ProtoOp::WriteFrame(frame_type), anchor),
-                Err(e) => panic!("Invalid protocol operation name: {}", e),
+                Err(e) => panic!("Invalid protocol operation name: {e}"),
             }
         } else if name.starts_with("plugin_control_") {
             match extract_po_param(name) {
                 Ok(val) => (ProtoOp::PluginControl(val), anchor),
-                Err(e) => panic!("Invalid protocol operation name: {}", e),
+                Err(e) => panic!("Invalid protocol operation name: {e}"),
             }
         } else if name == "get_packet_to_send" {
             (ProtoOp::GetPacketToSend, anchor)
