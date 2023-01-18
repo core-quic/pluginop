@@ -66,7 +66,7 @@ impl Write for FileDescriptor {
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        crate::print("Plugin calling flush, why?");
+        // crate::print("Plugin calling flush, why?");
         Ok(())
     }
 }

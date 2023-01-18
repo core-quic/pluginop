@@ -2,16 +2,16 @@ use std::{
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
     path::PathBuf,
-    pin::Pin,
     sync::{Arc, Mutex},
 };
 
 use log::error;
 use pluginop_common::{Anchor, ProtoOp};
-use wasmer::{Engine, Function, FunctionEnv, Imports, Store, Value};
+use wasmer::{Engine, Exports, Function, FunctionEnv, Store, Value};
 use wasmer_compiler_singlepass::Singlepass;
 
 use crate::{
+    api::get_imports_with,
     plugin::{create_env, Env, Plugin, RawPtr},
     Error, PluginizableConnection,
 };
@@ -28,8 +28,6 @@ fn create_store() -> Store {
 struct PluginArray<P: PluginizableConnection> {
     /// The inner array.
     array: Vec<Plugin<P>>,
-    /// Force this structure to be pinned.
-    _pin: PhantomPinned,
 }
 
 impl<P: PluginizableConnection> Deref for PluginArray<P> {
@@ -52,9 +50,9 @@ pub struct PluginHandler<P: PluginizableConnection> {
     /// A pointer to the serving session. It can stay null if no plugin is inserted.
     conn: RawPtr<P>,
     /// Function creating an `Imports`.
-    imports_func: fn(&mut Store, &FunctionEnv<Env<P>>) -> Imports,
+    exports_func: fn(&mut Store, &FunctionEnv<Env<P>>) -> Exports,
     /// The actual container of the plugins.
-    plugins: Pin<PluginArray<P>>,
+    plugins: PluginArray<P>,
     /// Opaque value provided as argument to the plugin.
     plugin_state: u32,
     /// Force this structure to be pinned.
@@ -101,17 +99,14 @@ pub struct ProtocolOperationDefault {
 }
 
 impl<P: PluginizableConnection> PluginHandler<P> {
-    pub fn new(imports_func: fn(&mut Store, &FunctionEnv<Env<P>>) -> Imports) -> Self {
+    pub fn new(exports_func: fn(&mut Store, &FunctionEnv<Env<P>>) -> Exports) -> Self {
         let mut plugin_state = [0u8; 4];
         getrandom::getrandom(&mut plugin_state).expect("cannot generate random");
         Self {
             store: Arc::new(Mutex::new(create_store())),
             conn: RawPtr::null(),
-            imports_func,
-            plugins: Pin::new(PluginArray {
-                array: Vec::new(),
-                _pin: PhantomPinned,
-            }),
+            exports_func,
+            plugins: PluginArray { array: Vec::new() },
             plugin_state: u32::from_be_bytes(plugin_state),
             _pin: PhantomPinned,
         }
@@ -136,12 +131,16 @@ impl<P: PluginizableConnection> PluginHandler<P> {
 
         let store = &mut *self.store.lock().unwrap();
         let env = FunctionEnv::new(store, create_env(self));
-        let imports = (self.imports_func)(store, &env);
+        let exports = (self.exports_func)(store, &env);
+        let imports = get_imports_with(exports, store, &env);
         match Plugin::new(plugin_fname, store, env, &imports) {
             Some(p) => {
                 self.plugins.push(p);
                 // Now the plugin is at its definitive area in memory, so we can initialize it.
-                self.plugins.last_mut().unwrap().initialize(store);
+                self.plugins
+                    .last_mut()
+                    .unwrap()
+                    .initialize(store, self.plugin_state);
                 true
             }
             None => {
