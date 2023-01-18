@@ -11,8 +11,6 @@ log = { version = "0.4", features = ["std"] }
 # Let use the single pass compiler, which is much faster than others
 wasmer = "3"
 wasmer-compiler-singlepass = "3"
-# Handle possible WASI plugins
-wasmer-wasi = "3"
 pluginop-common = { path = "../common" }
 bincode = "1"
 fnv = "1"
