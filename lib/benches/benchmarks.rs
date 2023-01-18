@@ -93,7 +93,43 @@ impl PluginizableConnectionDummy {
     }
 }
 
+fn memory_allocation_bench() {
+    let mut pcd = PluginizableConnectionDummy::new(exports_func_external_test);
+    let path = "../tests/memory-allocation/memory_allocation.wasm".to_string();
+    let mut locked_pcd = pcd.write().unwrap();
+    let pcd_ptr = &*locked_pcd as *const _;
+    let ok = locked_pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+    assert!(ok);
+    let (po, a) = ProtoOp::from_name("check_data");
+    assert!(locked_pcd.get_ph().provides(&po, a));
+    let internal_args = InternalArgs::default();
+    let ph = locked_pcd.get_ph();
+    let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+    assert!(res.is_ok());
+    let res = res.unwrap();
+    assert_eq!(res.len(), 1);
+    let res = res[0].i32();
+    assert!(res.is_some());
+    let res = res.unwrap();
+    assert_eq!(res, 6);
+    let (po2, a2) = ProtoOp::from_name("free_data");
+    assert!(locked_pcd.get_ph().provides(&po2, a2));
+    let internal_args = InternalArgs::default();
+    let ph = locked_pcd.get_ph();
+    let _ = ph.call(&po2, &[], |_| {}, |_, r| r, internal_args);
+    let internal_args = InternalArgs::default();
+    let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+    assert!(res.is_ok());
+    let res = res.unwrap();
+    assert_eq!(res.len(), 1);
+    let res = res[0].i32();
+    assert!(res.is_some());
+    let res = res.unwrap();
+    assert_eq!(res, -1);
+}
+
 fn criterion_benchmark(c: &mut Criterion) {
+    // First test
     let pcd = PluginizableConnectionDummy::new(exports_func_external_test);
     let path = "../tests/simple-wasm/simple_wasm.wasm".to_string();
     let mut locked_pcd = pcd.write().unwrap();
@@ -105,6 +141,11 @@ fn criterion_benchmark(c: &mut Criterion) {
     let ph = locked_pcd.get_ph();
     c.bench_function("run and return", |b| {
         b.iter(|| ph.call(&po, &[], |_| {}, |_, r| r, InternalArgs::default()))
+    });
+
+    // Second test
+    c.bench_function("memory allocation", |b| {
+        b.iter(|| memory_allocation_bench())
     });
 }
 

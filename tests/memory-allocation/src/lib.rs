@@ -44,19 +44,21 @@ fn free_plugin_data(penv: &mut PluginEnv) {
 pub extern fn init(penv: &mut PluginEnv) {
     malloc_plugin_data(penv, PluginData{
         val1: 2,
-        val2: 3, /* As 0 is already reserved */
+        val2: 3,
     });
 }
 
-// This function determines if there are plugin frames that must be
-// sent now or not.
-// A bool MUST be a i32...
+// Checking the content of the memory.
 #[no_mangle]
 pub extern fn check_data(penv: &mut PluginEnv) -> i32 {
-    let pd = get_plugin_data(penv).unwrap();
-    // TODO let have a better API than just plain numerics
-    // Note: printing slows down the stack...
-    // let txt = format!("pkt_type is {}, is_closing is {} and in_flight is {}", pkt_type, is_closing, pd.in_flight);
-    // print(&txt);
-    (pd.val1 * pd.val2) as i32
+    match get_plugin_data(penv) {
+        Some(pd) => (pd.val1 * pd.val2) as i32,
+        None => -1,
+    }
+}
+
+#[no_mangle]
+pub extern fn free_data(penv: &mut PluginEnv) -> i32 {
+    free_plugin_data(penv);
+    0
 }

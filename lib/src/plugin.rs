@@ -11,9 +11,7 @@ use std::{
 use fnv::FnvHashMap;
 use log::error;
 use pluginop_common::{Anchor, ProtoOp};
-use wasmer::{
-    Function, FunctionEnv, Imports, Instance, Module, Store, Value,
-};
+use wasmer::{Function, FunctionEnv, Imports, Instance, Module, Store, Value};
 
 use crate::{
     handler::{Permission, PluginHandler},
@@ -242,7 +240,7 @@ impl<P: PluginizableConnection> Plugin<P> {
     }
 
     /// Initializes the plugin.
-    pub(crate) fn initialize(&self, store: &mut Store) {
+    pub(crate) fn initialize(&self, store: &mut Store, plugin_state: u32) {
         let env_mut = self.env.as_mut(store);
         env_mut.initialized = true;
 
@@ -252,7 +250,7 @@ impl<P: PluginizableConnection> Plugin<P> {
         // And call a potential `init` method provided by the plugin.
         let po = ProtoOp::Init;
         if let Some(func) = self.get_func(&po, Anchor::Replace) {
-            self.call(store, func, &[], &mut |_| {}, |_, _| {})
+            self.call(store, func, &[plugin_state.into()], &mut |_| {}, |_, _| {})
                 .expect("error in init");
         }
     }

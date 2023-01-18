@@ -48,7 +48,7 @@ pub enum Registration {
 
 /// An enum to enumerate the three packet number spaces, as defined by Section
 /// A.2 of quic-recovery.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[repr(usize)]
 pub enum KPacketNumberSpace {
     Initial = 0,

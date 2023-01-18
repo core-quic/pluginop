@@ -137,7 +137,10 @@ impl<P: PluginizableConnection> PluginHandler<P> {
             Some(p) => {
                 self.plugins.push(p);
                 // Now the plugin is at its definitive area in memory, so we can initialize it.
-                self.plugins.last_mut().unwrap().initialize(store);
+                self.plugins
+                    .last_mut()
+                    .unwrap()
+                    .initialize(store, self.plugin_state);
                 true
             }
             None => {
