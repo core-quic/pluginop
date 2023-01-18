@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock, Weak};
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use pluginop::{
     api::{self, ConnectionToPlugin},
     handler::{InternalArgs, PluginHandler},
@@ -11,7 +11,7 @@ use pluginop_common::{
     quic::{ConnectionField, RecoveryField},
     ProtoOp,
 };
-use wasmer::{imports, Exports, Function, FunctionEnv, FunctionEnvMut, Imports, Store};
+use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Store, Value};
 
 /// Dummy object
 #[derive(Debug)]
@@ -94,7 +94,7 @@ impl PluginizableConnectionDummy {
 }
 
 fn memory_allocation_bench() {
-    let mut pcd = PluginizableConnectionDummy::new(exports_func_external_test);
+    let pcd = PluginizableConnectionDummy::new(exports_func_external_test);
     let path = "../tests/memory-allocation/memory_allocation.wasm".to_string();
     let mut locked_pcd = pcd.write().unwrap();
     let pcd_ptr = &*locked_pcd as *const _;
@@ -106,12 +106,7 @@ fn memory_allocation_bench() {
     let ph = locked_pcd.get_ph();
     let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
     assert!(res.is_ok());
-    let res = res.unwrap();
-    assert_eq!(res.len(), 1);
-    let res = res[0].i32();
-    assert!(res.is_some());
-    let res = res.unwrap();
-    assert_eq!(res, 6);
+    assert_eq!(*res.unwrap(), [Value::I32(6)]);
     let (po2, a2) = ProtoOp::from_name("free_data");
     assert!(locked_pcd.get_ph().provides(&po2, a2));
     let internal_args = InternalArgs::default();
@@ -120,12 +115,48 @@ fn memory_allocation_bench() {
     let internal_args = InternalArgs::default();
     let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
     assert!(res.is_ok());
-    let res = res.unwrap();
-    assert_eq!(res.len(), 1);
-    let res = res[0].i32();
-    assert!(res.is_some());
-    let res = res.unwrap();
-    assert_eq!(res, -1);
+    assert_eq!(*res.unwrap(), [Value::I32(-1)]);
+}
+
+fn static_memory(locked_pcd: &mut PluginizableConnectionDummy) {
+    let (po, a) = ProtoOp::from_name("get_mult_value");
+    assert!(locked_pcd.get_ph().provides(&po, a));
+    let internal_args = InternalArgs::default();
+    let ph = locked_pcd.get_ph();
+    let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+    assert!(res.is_ok());
+    assert_eq!(*res.unwrap(), [Value::I64(0)]);
+    let (po2, a2) = ProtoOp::from_name("set_values");
+    assert!(locked_pcd.get_ph().provides(&po2, a2));
+    let internal_args = InternalArgs::default();
+    let ph = locked_pcd.get_ph();
+    let res = ph.call(
+        &po2,
+        &[(2 as i32).into(), (3 as i32).into()],
+        |_| {},
+        |_, r| r,
+        internal_args,
+    );
+    assert!(res.is_ok());
+    let internal_args = InternalArgs::default();
+    let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+    assert!(res.is_ok());
+    assert_eq!(*res.unwrap(), [Value::I64(6)]);
+    let internal_args = InternalArgs::default();
+    let ph = locked_pcd.get_ph();
+    let res = ph.call(
+        &po2,
+        &[(0 as i32).into(), (0 as i32).into()],
+        |_| {},
+        |_, r| r,
+        internal_args,
+    );
+    assert!(res.is_ok());
+    let internal_args = InternalArgs::default();
+    let ph = locked_pcd.get_ph();
+    let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+    assert!(res.is_ok());
+    assert_eq!(*res.unwrap(), [Value::I64(0)]);
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -146,6 +177,17 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Second test
     c.bench_function("memory allocation", |b| {
         b.iter(|| memory_allocation_bench())
+    });
+
+    // Third test
+    let pcd = PluginizableConnectionDummy::new(exports_func_external_test);
+    let path = "../tests/static-memory/static_memory.wasm".to_string();
+    let mut locked_pcd = pcd.write().unwrap();
+    let pcd_ptr = &*locked_pcd as *const _;
+    let ok = locked_pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+    assert!(ok);
+    c.bench_function("static memory", |b| {
+        b.iter(|| static_memory(&mut *locked_pcd))
     });
 }
 

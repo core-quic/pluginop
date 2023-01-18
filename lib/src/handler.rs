@@ -6,7 +6,7 @@ use std::{
 };
 
 use log::error;
-use pluginop_common::{Anchor, ProtoOp};
+use pluginop_common::{Anchor, Input, ProtoOp};
 use wasmer::{Engine, Exports, Function, FunctionEnv, Store, Value};
 use wasmer_compiler_singlepass::Singlepass;
 
@@ -53,8 +53,6 @@ pub struct PluginHandler<P: PluginizableConnection> {
     exports_func: fn(&mut Store, &FunctionEnv<Env<P>>) -> Exports,
     /// The actual container of the plugins.
     plugins: PluginArray<P>,
-    /// Opaque value provided as argument to the plugin.
-    plugin_state: u32,
     /// Force this structure to be pinned.
     _pin: PhantomPinned,
 }
@@ -100,14 +98,11 @@ pub struct ProtocolOperationDefault {
 
 impl<P: PluginizableConnection> PluginHandler<P> {
     pub fn new(exports_func: fn(&mut Store, &FunctionEnv<Env<P>>) -> Exports) -> Self {
-        let mut plugin_state = [0u8; 4];
-        getrandom::getrandom(&mut plugin_state).expect("cannot generate random");
         Self {
             store: Arc::new(Mutex::new(create_store())),
             conn: RawPtr::null(),
             exports_func,
             plugins: PluginArray { array: Vec::new() },
-            plugin_state: u32::from_be_bytes(plugin_state),
             _pin: PhantomPinned,
         }
     }
@@ -137,10 +132,7 @@ impl<P: PluginizableConnection> PluginHandler<P> {
             Some(p) => {
                 self.plugins.push(p);
                 // Now the plugin is at its definitive area in memory, so we can initialize it.
-                self.plugins
-                    .last_mut()
-                    .unwrap()
-                    .initialize(store, self.plugin_state);
+                self.plugins.last_mut().unwrap().initialize(store);
                 true
             }
             None => {
@@ -173,7 +165,7 @@ impl<P: PluginizableConnection> PluginHandler<P> {
         &self,
         pod: Option<&&ProtocolOperationDefault>,
         po: &ProtoOp,
-        params: &[Value],
+        params: &[Input],
         mut before_call: B,
         after_call: A,
         _internal_args: InternalArgs,
@@ -254,7 +246,7 @@ impl<P: PluginizableConnection> PluginHandler<P> {
     pub fn call<R: 'static, B, A>(
         &self,
         po: &ProtoOp,
-        params: &[Value],
+        params: &[Input],
         before_call: B,
         after_call: A,
         internal_args: InternalArgs,
@@ -268,14 +260,10 @@ impl<P: PluginizableConnection> PluginHandler<P> {
         // TODO
         // let pod = self.default_protocol_operations.get(po);
 
-        if !params.is_empty() {
-            todo!("handle params")
-        }
-
         self.call_internal(
             None, /* pod */
             po,
-            &[self.plugin_state.into()],
+            params,
             before_call,
             after_call,
             internal_args,

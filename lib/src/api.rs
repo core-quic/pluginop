@@ -94,6 +94,49 @@ fn remove_opaque_from_plugin<P: PluginizableConnection>(
     }
 }
 
+/// Gets a serialized input.
+///
+/// Function intended to be part of the Plugin API.
+///
+/// # Panics
+///
+/// This function panics if the index is out of bound.
+fn get_input_from_plugin<P: PluginizableConnection>(
+    env: FunctionEnvMut<Env<P>>,
+    index: u32,
+    mem_ptr: WasmPtr<u8>,
+    mem_len: u32,
+) -> i32 {
+    let instance = env.data().get_instance();
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -1,
+    };
+    let view = memory.view(&env);
+    let input = match env.data().inputs.get(index as usize) {
+        Some(i) => i,
+        None => return -2,
+    };
+    // TODO: We cannot use serialize_into here because this new API hides the
+    // actual slice. This decreases performances as we first serialize the data
+    // in one buffer, and copy it into another one.
+    let serialized = match bincode::serialize(input) {
+        Ok(s) => s,
+        Err(_) => return -3,
+    };
+    // Sanity check to avoid memory overwrite.
+    if serialized.len() > mem_len as usize {
+        return -4;
+    }
+    // TODO: try this with a benchmark.
+    // view.data_unchecked_mut();
+    match view.write(mem_ptr.offset().into(), &serialized) {
+        Ok(()) => 0,
+        Err(_) => -5,
+    }
+}
+
 /// Gets the imports that are common to any implementation.
 ///
 /// The host implementation still needs to privide the following functions:
@@ -120,6 +163,10 @@ pub fn get_imports_with<P: PluginizableConnection>(
     exports.insert(
         "remove_opaque_from_plugin",
         Function::new_typed_with_env(store, env, remove_opaque_from_plugin),
+    );
+    exports.insert(
+        "get_input_from_plugin",
+        Function::new_typed_with_env(store, env, get_input_from_plugin),
     );
 
     let mut imports = Imports::new();

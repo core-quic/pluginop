@@ -10,7 +10,7 @@ use std::{
 
 use fnv::FnvHashMap;
 use log::error;
-use pluginop_common::{Anchor, ProtoOp};
+use pluginop_common::{Anchor, Input, ProtoOp};
 use wasmer::{Function, FunctionEnv, Imports, Instance, Module, Store, Value};
 
 use crate::{
@@ -99,6 +99,26 @@ impl DerefMut for OutputArray {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct InputArray {
+    inner: Vec<Input>,
+    _pin: PhantomPinned,
+}
+
+impl Deref for InputArray {
+    type Target = Vec<Input>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for InputArray {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
 #[derive(Debug)]
 pub struct Env<P: PluginizableConnection> {
     /// The raw pointer to the plugin handler. Because `PluginHandler` is pinned,
@@ -110,6 +130,8 @@ pub struct Env<P: PluginizableConnection> {
     permissions: BTreeSet<Permission>,
     /// Whether the associated plugin was initialized or not.
     initialized: bool,
+    /// Contains the inputs specific to the called operation.
+    pub inputs: Pin<InputArray>,
     /// Enables a plugin to output more than one (serializable) value, as returning more than 1
     /// output in a function is not FFI safe.
     pub outputs: Pin<OutputArray>,
@@ -124,13 +146,16 @@ pub(crate) fn create_env<P: PluginizableConnection>(ph: *const PluginHandler<P>)
         instance: Weak::new(),
         permissions: BTreeSet::new(),
         initialized: false,
+        inputs: Pin::new(InputArray::default()),
         outputs: Pin::new(OutputArray::default()),
         opaque_values: Box::pin(FnvHashMap::default()),
     }
 }
 
 impl<P: PluginizableConnection> Env<P> {
-    fn sanitize(&mut self) { /* Placeholder */
+    fn sanitize(&mut self) {
+        // Empty the inputs.
+        self.inputs.clear();
     }
 
     fn _get_ph(&self) -> &PluginHandler<P> {
@@ -153,6 +178,8 @@ pub(crate) struct Plugin<P: PluginizableConnection> {
     env: FunctionEnv<Env<P>>,
     /// A hash table to the functions contained in the instance.
     pocodes: Pin<Box<FnvHashMap<ProtoOp, POCode>>>,
+    /// Opaque value provided as argument to the plugin.
+    plugin_state: u32,
 }
 
 impl<P: PluginizableConnection> Plugin<P> {
@@ -169,6 +196,9 @@ impl<P: PluginizableConnection> Plugin<P> {
 
                 match Instance::new(store, &module, imports) {
                     Ok(instance) => {
+                        let mut plugin_state = [0u8; 4];
+                        getrandom::getrandom(&mut plugin_state).expect("cannot generate random");
+
                         // XXX We could update the permissions later.
                         let permissions = &mut env.as_mut(store).permissions;
                         permissions.insert(Permission::Output);
@@ -183,6 +213,7 @@ impl<P: PluginizableConnection> Plugin<P> {
                             instance: Arc::new(Box::pin(instance)),
                             env,
                             pocodes: Box::pin(pocodes),
+                            plugin_state: u32::from_be_bytes(plugin_state),
                         });
                     }
                     Err(e) => {
@@ -240,7 +271,7 @@ impl<P: PluginizableConnection> Plugin<P> {
     }
 
     /// Initializes the plugin.
-    pub(crate) fn initialize(&self, store: &mut Store, plugin_state: u32) {
+    pub(crate) fn initialize(&self, store: &mut Store) {
         let env_mut = self.env.as_mut(store);
         env_mut.initialized = true;
 
@@ -250,7 +281,7 @@ impl<P: PluginizableConnection> Plugin<P> {
         // And call a potential `init` method provided by the plugin.
         let po = ProtoOp::Init;
         if let Some(func) = self.get_func(&po, Anchor::Replace) {
-            self.call(store, func, &[plugin_state.into()], &mut |_| {}, |_, _| {})
+            self.call(store, func, &[], &mut |_| {}, |_, _| {})
                 .expect("error in init");
         }
     }
@@ -260,7 +291,7 @@ impl<P: PluginizableConnection> Plugin<P> {
         &self,
         store: &mut Store,
         func: &Function,
-        params: &[Value],
+        params: &[Input],
         before_call: &mut B,
         mut after_call: A,
     ) -> Result<R, Error>
@@ -272,9 +303,13 @@ impl<P: PluginizableConnection> Plugin<P> {
         // Before launching any call, we should sanitize the running `env`.
         env_mut.sanitize();
 
+        for p in params {
+            env_mut.inputs.push(*p);
+        }
+
         before_call(self.env.as_ref(store));
         // debug!("Calling PO with param {:?}", params);
-        match func.call(store, params) {
+        match func.call(store, &[self.plugin_state.into()]) {
             Ok(res) => Ok(after_call(self.env.as_ref(store), res)),
             Err(re) => Err(Error::RuntimeError(re)),
         }

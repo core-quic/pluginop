@@ -17,6 +17,14 @@ const SIZE: usize = 1500;
 // Playing directly with export functions can be cumbersome. Instead, we propose wrappers for these
 // external calls that are easier to use when developing plugins.
 
+#[derive(Clone, Debug)]
+pub enum Error {
+    ShortInternalBuffer,
+    SerializeError,
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
 extern "C" {
     /* General output function */
     fn save_output_from_plugin(ptr: u32, len: u32);
@@ -76,7 +84,9 @@ extern "C" {
     /* Registers a protocol operation */
     fn register_from_plugin(field_ptr: u32, field_len: u32);
     /* Gets an input */
-    fn get_input_from_plugin(index: u32, res_ptr: u32, res_len: u32);
+    fn get_input_from_plugin(index: u32, res_ptr: u32, res_len: u32) -> i32;
+    /* Gets all inputs */
+    fn get_inputs_from_plugin(res_ptr: u32, res_len: u32) -> i32;
     /* Gets the time */
     fn get_time_from_plugin(res_ptr: u32, res_len: u32);
     /* Generates a connection ID */
@@ -377,18 +387,36 @@ impl PluginEnv {
     }
 
     /// Gets an input. May panic.
-    pub fn get_input<T>(index: u32) -> T
+    pub fn get_input<T>(&self, index: u32) -> Result<T>
     where
         T: TryFrom<Input>,
         <T as TryFrom<Input>>::Error: std::fmt::Debug,
     {
         let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
-        unsafe {
-            get_input_from_plugin(index, res.as_mut_ptr() as u32, SIZE as u32);
+        if unsafe { get_input_from_plugin(index, res.as_mut_ptr() as u32, SIZE as u32) } != 0 {
+            return Err(Error::ShortInternalBuffer);
         }
         let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-        let input: Input = bincode::deserialize(slice).expect("no error");
-        input.try_into().expect("cannot convert to wanted type")
+        let input: Input = match bincode::deserialize(slice) {
+            Ok(i) => i,
+            Err(_) => return Err(Error::SerializeError),
+        };
+        input.try_into().map_err(|_| Error::SerializeError)
+    }
+
+    /// Gets the inputs.
+    pub fn get_inputs<T, const N: usize>() -> Result<[T; N]>
+    where
+        T: TryFrom<Input>,
+        <T as TryFrom<Input>>::Error: std::fmt::Debug,
+    {
+        let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
+        if unsafe { get_inputs_from_plugin(res.as_mut_ptr() as u32, SIZE as u32) } != 0 {
+            return Err(Error::ShortInternalBuffer);
+        }
+        let _slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
+        Err(Error::SerializeError)
+        // bincode::deserialize(slice).map_err(|_| Error::SerializeError)?
     }
 
     pub fn get_time() -> unix_time::Instant {
