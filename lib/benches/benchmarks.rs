@@ -189,6 +189,17 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("static memory", |b| {
         b.iter(|| static_memory(&mut *locked_pcd))
     });
+
+    // Fourth test
+    let pcd = PluginizableConnectionDummy::new(exports_func_external_test);
+    let path = "../tests/inputs-support/inputs_support.wasm".to_string();
+    let mut locked_pcd = pcd.write().unwrap();
+    let pcd_ptr = &*locked_pcd as *const _;
+    let ok = locked_pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+    assert!(ok);
+    c.bench_function("inputs support", |b| {
+        b.iter(|| static_memory(&mut *locked_pcd))
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);

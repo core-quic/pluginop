@@ -98,9 +98,7 @@ fn remove_opaque_from_plugin<P: PluginizableConnection>(
 ///
 /// Function intended to be part of the Plugin API.
 ///
-/// # Panics
-///
-/// This function panics if the index is out of bound.
+/// Returns `0` if the operation succeeded. Otherwise, returns a negative value.
 fn get_input_from_plugin<P: PluginizableConnection>(
     env: FunctionEnvMut<Env<P>>,
     index: u32,
@@ -130,6 +128,67 @@ fn get_input_from_plugin<P: PluginizableConnection>(
     match bincode::serialize_into(&mut memory_slice[mem_ptr.offset() as usize..], input) {
         Ok(()) => 0,
         Err(_) => -5,
+    }
+}
+
+/// Gets the serialized inputs.
+///
+/// Function intended to be part of the Plugin API.
+///
+/// Returns `0` if the operation succeeded. Otherwise, returns a negative value.
+fn get_inputs_from_plugin<P: PluginizableConnection>(
+    env: FunctionEnvMut<Env<P>>,
+    mem_ptr: WasmPtr<u8>,
+    mem_len: u32,
+) -> i32 {
+    let instance = env.data().get_instance();
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -1,
+    };
+    let view = memory.view(&env);
+    // Sanity check to avoid memory overwrite.
+    match bincode::serialized_size(&*env.data().inputs) {
+        Ok(l) if l > mem_len.into() => return -2,
+        Err(_) => return -3,
+        _ => {}
+    };
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked_mut() };
+    match bincode::serialize_into(
+        &mut memory_slice[mem_ptr.offset() as usize..],
+        &*env.data().inputs,
+    ) {
+        Ok(()) => 0,
+        Err(_) => -4,
+    }
+}
+
+/// Prints the content of the plugin memory located at the address `ptr` as a `str` having a length
+/// of `len`.
+///
+/// Code from https://github.com/wasmerio/wasmer-rust-example/blob/master/examples/string.rs
+///
+/// Function intended to be part of the Plugin API.
+pub fn print_from_plugin<P: PluginizableConnection>(
+    env: FunctionEnvMut<Env<P>>,
+    ptr: WasmPtr<u8>,
+    len: u32,
+) {
+    let instance = env.data().get_instance();
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    let view = memory.view(&env);
+
+    // Uses the WasmPtr wrapper to simplify the operation to get ptr memory.
+    if let Ok(s) = ptr.read_utf8_string(&view, len) {
+        // Print it!
+        println!("{s}");
     }
 }
 
@@ -163,6 +222,14 @@ pub fn get_imports_with<P: PluginizableConnection>(
     exports.insert(
         "get_input_from_plugin",
         Function::new_typed_with_env(store, env, get_input_from_plugin),
+    );
+    exports.insert(
+        "get_inputs_from_plugin",
+        Function::new_typed_with_env(store, env, get_inputs_from_plugin),
+    );
+    exports.insert(
+        "print_from_plugin",
+        Function::new_typed_with_env(store, env, print_from_plugin),
     );
 
     let mut imports = Imports::new();
