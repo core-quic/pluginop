@@ -118,20 +118,16 @@ fn get_input_from_plugin<P: PluginizableConnection>(
         Some(i) => i,
         None => return -2,
     };
-    // TODO: We cannot use serialize_into here because this new API hides the
-    // actual slice. This decreases performances as we first serialize the data
-    // in one buffer, and copy it into another one.
-    let serialized = match bincode::serialize(input) {
-        Ok(s) => s,
-        Err(_) => return -3,
-    };
     // Sanity check to avoid memory overwrite.
-    if serialized.len() > mem_len as usize {
-        return -4;
-    }
-    // TODO: try this with a benchmark.
-    // view.data_unchecked_mut();
-    match view.write(mem_ptr.offset().into(), &serialized) {
+    match bincode::serialized_size(input) {
+        Ok(l) if l > mem_len.into() => return -3,
+        Err(_) => return -4,
+        _ => {}
+    };
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked_mut() };
+    match bincode::serialize_into(&mut memory_slice[mem_ptr.offset() as usize..], input) {
         Ok(()) => 0,
         Err(_) => -5,
     }
