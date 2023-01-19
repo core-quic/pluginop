@@ -3,7 +3,6 @@
 use std::convert::TryInto;
 
 pub use pluginop_common::quic;
-pub use pluginop_common::PluginVal;
 pub use pluginop_common::ProtoOp;
 
 use pluginop_common::{quic::ConnectionId, Input};
@@ -17,7 +16,7 @@ const SIZE: usize = 1500;
 // Playing directly with export functions can be cumbersome. Instead, we propose wrappers for these
 // external calls that are easier to use when developing plugins.
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Error {
     ShortInternalBuffer,
     SerializeError,
@@ -99,6 +98,10 @@ extern "C" {
 
 #[repr(C)]
 pub struct PluginEnv(u64);
+
+struct If<const B: bool>;
+trait True {}
+impl True for If<true> {}
 
 impl PluginEnv {
     /// Stores a new plugin output.
@@ -228,7 +231,7 @@ impl PluginEnv {
     }
 
     /// Prints the provided string on the standard output.
-    pub fn print(s: &str) {
+    pub fn print(&self, s: &str) {
         unsafe { print_from_plugin(s.as_ptr(), s.len()) }
     }
 
@@ -346,7 +349,7 @@ impl PluginEnv {
     }
 
     /// Calls the protocol operation `po` with the provided arguments.
-    pub fn call_protoop(po: ProtoOp, args: Vec<PluginVal>, inputs: Vec<Input>) -> Vec<PluginVal> {
+    pub fn call_protoop(po: ProtoOp, args: Vec<Input>, inputs: Vec<Input>) -> Vec<Input> {
         let serialized_po = bincode::serialize(&po).expect("serialized po");
         let serialized_args = bincode::serialize(&args).expect("serialized args");
         let serialized_inputs = bincode::serialize(&inputs).expect("serialized inputs");
@@ -405,18 +408,13 @@ impl PluginEnv {
     }
 
     /// Gets the inputs.
-    pub fn get_inputs<T, const N: usize>() -> Result<[T; N]>
-    where
-        T: TryFrom<Input>,
-        <T as TryFrom<Input>>::Error: std::fmt::Debug,
-    {
+    pub fn get_inputs(&self) -> Result<Vec<Input>> {
         let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
         if unsafe { get_inputs_from_plugin(res.as_mut_ptr() as u32, SIZE as u32) } != 0 {
             return Err(Error::ShortInternalBuffer);
         }
-        let _slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-        Err(Error::SerializeError)
-        // bincode::deserialize(slice).map_err(|_| Error::SerializeError)?
+        let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
+        bincode::deserialize(slice).map_err(|_| Error::SerializeError)
     }
 
     pub fn get_time() -> unix_time::Instant {

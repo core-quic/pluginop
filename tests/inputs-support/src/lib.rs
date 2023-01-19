@@ -17,10 +17,14 @@ lazy_static! {
 // Export a function named "simple_call".
 #[no_mangle]
 pub extern fn set_values(penv: &mut PluginEnv) -> i64 {
-    let (val1, val2) = if let (Ok(v1), Ok(v2)) = (penv.get_input(0), penv.get_input(1)) {
+    let inputs = match penv.get_inputs() {
+        Ok(i) => i,
+        Err(e) => return -1,
+    };
+    let (val1, val2) = if let (Ok(v1), Ok(v2)) = (inputs[0].try_into(), inputs[1].try_into()) {
         (v1, v2)
     } else {
-        return -1;
+        return -2;
     };
     let mut data = (*DATA).lock().unwrap();
     (*data).val1 = val1;

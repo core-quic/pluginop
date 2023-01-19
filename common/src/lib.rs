@@ -7,7 +7,12 @@ use unix_time::Instant;
 
 #[derive(Clone, Debug)]
 pub enum ConversionError {
-    InvalidValue,
+    InvalidI32,
+    InvalidI64,
+    InvalidU32,
+    InvalidU64,
+    InvalidF32,
+    InvalidF64,
     InvalidDuration,
     InvalidInstant,
     InvalidFrame,
@@ -185,6 +190,33 @@ impl ProtoOp {
     }
 }
 
+/// Inputs that can be passed to protocol operations.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub enum Input {
+    /// A i32.
+    I32(i32),
+    /// A i64.
+    I64(i64),
+    /// A u32.
+    U32(u32),
+    /// A u64.
+    U64(u64),
+    /// A f32.
+    F32(f32),
+    /// A f64.
+    F64(f64),
+    /// A duration.
+    Duration(Duration),
+    /// A specific instant in time relative to the UNIX epoch.
+    Instant(Instant),
+    /// A socket address.
+    SocketAddr(SocketAddr),
+    // TODO: handle complex structures.
+    ///// QUIC specific inputs.
+    // QUIC(quic::QInput),
+}
+
 macro_rules! impl_from_try_from {
     ($e:ident, $v:ident, $t:ident, $err:ident, $verr:ident) => {
         impl From<$t> for $e {
@@ -206,71 +238,12 @@ macro_rules! impl_from_try_from {
     };
 }
 
-/// A value, stored in the plugin memory, that can serve as argument or result of a protocol
-/// operation called by the plugin.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-pub enum PluginVal {
-    I32(i32),
-    I64(i64),
-    U32(u32),
-    U64(u64),
-    F32(f32),
-    F64(f64),
-}
-
-impl_from_try_from!(PluginVal, I32, i32, ConversionError, InvalidValue);
-impl_from_try_from!(PluginVal, I64, i64, ConversionError, InvalidValue);
-impl_from_try_from!(PluginVal, U32, u32, ConversionError, InvalidValue);
-impl_from_try_from!(PluginVal, U64, u64, ConversionError, InvalidValue);
-impl_from_try_from!(PluginVal, F32, f32, ConversionError, InvalidValue);
-impl_from_try_from!(PluginVal, F64, f64, ConversionError, InvalidValue);
-
-/// Inputs that can be passed to protocol operations.
-#[allow(clippy::large_enum_variant)]
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub enum Input {
-    /// A raw value.
-    Value(PluginVal),
-    /// A duration.
-    Duration(Duration),
-    /// A specific instant in time relative to the UNIX epoch.
-    Instant(Instant),
-    /// A socket address.
-    SocketAddr(SocketAddr),
-    // TODO: handle complex structures.
-    ///// QUIC specific inputs.
-    // QUIC(quic::QInput),
-}
-
-macro_rules! impl_input_from_value_try_from {
-    ($v:ident, $t:ident) => {
-        impl From<$t> for Input {
-            fn from(v: $t) -> Self {
-                Input::Value(PluginVal::$v(v))
-            }
-        }
-
-        impl TryFrom<Input> for $t {
-            type Error = ConversionError;
-
-            fn try_from(v: Input) -> Result<Self, Self::Error> {
-                match v {
-                    Input::Value(PluginVal::$v(v)) => Ok(v),
-                    _ => Err(ConversionError::InvalidValue),
-                }
-            }
-        }
-    };
-}
-
-impl_input_from_value_try_from!(I32, i32);
-impl_input_from_value_try_from!(I64, i64);
-impl_input_from_value_try_from!(U32, u32);
-impl_input_from_value_try_from!(U64, u64);
-impl_input_from_value_try_from!(F32, f32);
-impl_input_from_value_try_from!(F64, f64);
-
-impl_from_try_from!(Input, Value, PluginVal, ConversionError, InvalidValue);
+impl_from_try_from!(Input, I32, i32, ConversionError, InvalidI32);
+impl_from_try_from!(Input, I64, i64, ConversionError, InvalidI64);
+impl_from_try_from!(Input, U32, u32, ConversionError, InvalidU32);
+impl_from_try_from!(Input, U64, u64, ConversionError, InvalidU64);
+impl_from_try_from!(Input, F32, f32, ConversionError, InvalidF32);
+impl_from_try_from!(Input, F64, f64, ConversionError, InvalidF64);
 impl_from_try_from!(Input, Duration, Duration, ConversionError, InvalidDuration);
 impl_from_try_from!(Input, Instant, Instant, ConversionError, InvalidInstant);
 impl_from_try_from!(

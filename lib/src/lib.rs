@@ -157,10 +157,9 @@ mod tests {
         assert_eq!(*res.unwrap(), [Value::I32(-1)]);
     }
 
-    #[test]
-    fn static_memory() {
+    fn memory_run(path: &str) {
         let pcd = PluginizableConnectionDummy::new(exports_func_external_test);
-        let path = "../tests/static-memory/static_memory.wasm".to_string();
+        let path = path.to_string();
         let mut locked_pcd = pcd.write().unwrap();
         let pcd_ptr = &*locked_pcd as *const _;
         let ok = locked_pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
@@ -184,6 +183,7 @@ mod tests {
             internal_args,
         );
         assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), [Value::I64(0)]);
         let internal_args = InternalArgs::default();
         let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
         assert!(res.is_ok());
@@ -198,11 +198,22 @@ mod tests {
             internal_args,
         );
         assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), [Value::I64(0)]);
         let internal_args = InternalArgs::default();
         let ph = locked_pcd.get_ph();
         let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), [Value::I64(0)]);
+    }
+
+    #[test]
+    fn static_memory() {
+        memory_run("../tests/static-memory/static_memory.wasm");
+    }
+
+    #[test]
+    fn inputs_support() {
+        memory_run("../tests/inputs-support/inputs_support.wasm");
     }
 }
 
