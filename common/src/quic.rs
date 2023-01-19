@@ -1,9 +1,7 @@
-use std::{convert::TryFrom, net::SocketAddr};
+use std::net::SocketAddr;
 use unix_time::Instant;
 
 use serde::{Deserialize, Serialize};
-
-use crate::{ConversionError, Input};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[repr(C)]
@@ -844,53 +842,53 @@ pub enum QInput {
     SentPacket(SentPacket),
 }
 
-impl From<Header> for Input {
-    fn from(h: Header) -> Self {
-        Self::QUIC(QInput::Header(h))
-    }
-}
+// impl From<Header> for Input {
+//     fn from(h: Header) -> Self {
+//         Self::QUIC(QInput::Header(h))
+//     }
+// }
 
-impl TryFrom<Input> for Header {
-    type Error = ConversionError;
+// impl TryFrom<Input> for Header {
+//     type Error = ConversionError;
 
-    fn try_from(value: Input) -> Result<Self, Self::Error> {
-        match value {
-            Input::QUIC(QInput::Header(h)) => Ok(h),
-            _ => Err(ConversionError::InvalidHeader),
-        }
-    }
-}
+//     fn try_from(value: Input) -> Result<Self, Self::Error> {
+//         match value {
+//             Input::QUIC(QInput::Header(h)) => Ok(h),
+//             _ => Err(ConversionError::InvalidHeader),
+//         }
+//     }
+// }
 
-impl From<Frame> for Input {
-    fn from(f: Frame) -> Self {
-        Self::QUIC(QInput::Frame(f))
-    }
-}
+// impl From<Frame> for Input {
+//     fn from(f: Frame) -> Self {
+//         Self::QUIC(QInput::Frame(f))
+//     }
+// }
 
-impl TryFrom<Input> for Frame {
-    type Error = ConversionError;
+// impl TryFrom<Input> for Frame {
+//     type Error = ConversionError;
 
-    fn try_from(value: Input) -> Result<Self, Self::Error> {
-        match value {
-            Input::QUIC(QInput::Frame(f)) => Ok(f),
-            _ => Err(ConversionError::InvalidFrame),
-        }
-    }
-}
+//     fn try_from(value: Input) -> Result<Self, Self::Error> {
+//         match value {
+//             Input::QUIC(QInput::Frame(f)) => Ok(f),
+//             _ => Err(ConversionError::InvalidFrame),
+//         }
+//     }
+// }
 
-impl From<SentPacket> for Input {
-    fn from(sp: SentPacket) -> Self {
-        Input::QUIC(QInput::SentPacket(sp))
-    }
-}
+// impl From<SentPacket> for Input {
+//     fn from(sp: SentPacket) -> Self {
+//         Input::QUIC(QInput::SentPacket(sp))
+//     }
+// }
 
-impl TryFrom<Input> for SentPacket {
-    type Error = ConversionError;
+// impl TryFrom<Input> for SentPacket {
+//     type Error = ConversionError;
 
-    fn try_from(value: Input) -> Result<Self, Self::Error> {
-        match value {
-            Input::QUIC(QInput::SentPacket(sp)) => Ok(sp),
-            _ => Err(ConversionError::InvalidSentPacket),
-        }
-    }
-}
+//     fn try_from(value: Input) -> Result<Self, Self::Error> {
+//         match value {
+//             Input::QUIC(QInput::SentPacket(sp)) => Ok(sp),
+//             _ => Err(ConversionError::InvalidSentPacket),
+//         }
+//     }
+// }
