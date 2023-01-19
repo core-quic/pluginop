@@ -41,24 +41,31 @@ fn free_plugin_data(penv: &mut PluginEnv) {
 
 // Initialize the plugin.
 #[no_mangle]
-pub extern fn init(penv: &mut PluginEnv) {
+pub extern fn init(penv: &mut PluginEnv) -> i64 {
     malloc_plugin_data(penv, PluginData{
         val1: 2,
         val2: 3,
     });
+    0
 }
 
 // Checking the content of the memory.
 #[no_mangle]
-pub extern fn check_data(penv: &mut PluginEnv) -> i32 {
+pub extern fn check_data(penv: &mut PluginEnv) -> i64 {
     match get_plugin_data(penv) {
-        Some(pd) => (pd.val1 * pd.val2) as i32,
+        Some(pd) => {
+            let res = (pd.val1 * pd.val2) as i64;
+            match penv.save_output(res.into()) {
+                Ok(()) => 0,
+                Err(_) => -2,
+            }
+        },
         None => -1,
     }
 }
 
 #[no_mangle]
-pub extern fn free_data(penv: &mut PluginEnv) -> i32 {
+pub extern fn free_data(penv: &mut PluginEnv) -> i64 {
     free_plugin_data(penv);
     0
 }

@@ -10,21 +10,17 @@ struct Data {
 lazy_static! {
     static ref DATA: Mutex<Data> = Mutex::new(Data {
         val1: 0,
-        val2: 0,
+        val2: 1,
     });
 }
 
 // Export a function named "simple_call".
 #[no_mangle]
 pub extern fn set_values(penv: &mut PluginEnv) -> i64 {
-    let inputs = match penv.get_inputs() {
-        Ok(i) => i,
-        Err(_) => return -1,
-    };
-    let (val1, val2) = if let (Ok(v1), Ok(v2)) = (inputs[0].try_into(), inputs[1].try_into()) {
+    let (val1, val2) = if let (Ok(v1), Ok(v2)) = (penv.get_input(0), penv.get_input(1)) {
         (v1, v2)
     } else {
-        return -2;
+        return -1;
     };
     let mut data = (*DATA).lock().unwrap();
     (*data).val1 = val1;
@@ -33,9 +29,14 @@ pub extern fn set_values(penv: &mut PluginEnv) -> i64 {
 }
 
 #[no_mangle]
-pub extern fn get_mult_value(penv: &mut PluginEnv) -> i64 {
+pub extern fn get_calc_value(penv: &mut PluginEnv) -> i64 {
     let data = (*DATA).lock().unwrap();
-    let res = ((*data).val1 * (*data).val2) as i64;
-    penv.save_output(res.into());
-    0
+    let add = data.val1 + data.val2;
+    let sub = data.val1 - data.val2;
+    let mul = data.val1 * data.val2;
+    let div = data.val1 / data.val2;
+    match penv.save_outputs(&[add.into(), sub.into(), mul.into(), div.into()]) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
 }

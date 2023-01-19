@@ -9,3 +9,7 @@ edition = "2021"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 unix-time = "0.1"
+bincode = { version = "1", optional = true }
+
+[features]
+wasm = ["bincode"]

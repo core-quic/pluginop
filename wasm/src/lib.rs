@@ -5,7 +5,7 @@ use std::convert::TryInto;
 pub use pluginop_common::quic;
 pub use pluginop_common::ProtoOp;
 
-use pluginop_common::{quic::ConnectionId, Input};
+use pluginop_common::{quic::ConnectionId, PluginVal};
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 pub use unix_time::Instant;
@@ -26,7 +26,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 extern "C" {
     /* General output function */
-    fn save_output_from_plugin(ptr: u32, len: u32);
+    fn save_output_from_plugin(ptr: u32, len: u32) -> i32;
+    /* Output function to call only once, with all the outputs */
+    fn save_outputs_from_plugin(ptr: u32, len: u32) -> i32;
     /* Store opaque value */
     fn store_opaque_from_plugin(tag: u64, ptr: u32);
     /* Get opaque value */
@@ -97,24 +99,34 @@ extern "C" {
 }
 
 #[repr(C)]
-pub struct PluginEnv(u64);
-
-struct If<const B: bool>;
-trait True {}
-impl True for If<true> {}
+pub struct PluginEnv(u32);
 
 impl PluginEnv {
     /// Stores a new plugin output.
-    pub fn save_output<T>(&self, v: T)
-    where
-        T: Serialize,
-    {
+    pub fn save_output(&self, v: PluginVal) -> Result<()> {
         let serialized_value = bincode::serialize(&v).expect("serialized value");
-        unsafe {
+        match unsafe {
             save_output_from_plugin(
                 serialized_value.as_ptr() as u32,
                 serialized_value.len() as u32,
             )
+        } {
+            0 => Ok(()),
+            _ => Err(Error::SerializeError),
+        }
+    }
+
+    /// Stores a new plugin output.
+    pub fn save_outputs(&self, v: &[PluginVal]) -> Result<()> {
+        let serialized_value = bincode::serialize(&v).expect("serialized value");
+        match unsafe {
+            save_outputs_from_plugin(
+                serialized_value.as_ptr() as u32,
+                serialized_value.len() as u32,
+            )
+        } {
+            0 => Ok(()),
+            _ => Err(Error::SerializeError),
         }
     }
 
@@ -349,7 +361,11 @@ impl PluginEnv {
     }
 
     /// Calls the protocol operation `po` with the provided arguments.
-    pub fn call_protoop(po: ProtoOp, args: Vec<Input>, inputs: Vec<Input>) -> Vec<Input> {
+    pub fn call_protoop(
+        po: ProtoOp,
+        args: Vec<PluginVal>,
+        inputs: Vec<PluginVal>,
+    ) -> Vec<PluginVal> {
         let serialized_po = bincode::serialize(&po).expect("serialized po");
         let serialized_args = bincode::serialize(&args).expect("serialized args");
         let serialized_inputs = bincode::serialize(&inputs).expect("serialized inputs");
@@ -392,15 +408,15 @@ impl PluginEnv {
     /// Gets an input. May panic.
     pub fn get_input<T>(&self, index: u32) -> Result<T>
     where
-        T: TryFrom<Input>,
-        <T as TryFrom<Input>>::Error: std::fmt::Debug,
+        T: TryFrom<PluginVal>,
+        <T as TryFrom<PluginVal>>::Error: std::fmt::Debug,
     {
         let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
         if unsafe { get_input_from_plugin(index, res.as_mut_ptr() as u32, SIZE as u32) } != 0 {
             return Err(Error::ShortInternalBuffer);
         }
         let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-        let input: Input = match bincode::deserialize(slice) {
+        let input: PluginVal = match bincode::deserialize(slice) {
             Ok(i) => i,
             Err(_) => return Err(Error::SerializeError),
         };
@@ -408,7 +424,7 @@ impl PluginEnv {
     }
 
     /// Gets the inputs.
-    pub fn get_inputs(&self) -> Result<Vec<Input>> {
+    pub fn get_inputs(&self) -> Result<Vec<PluginVal>> {
         let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
         if unsafe { get_inputs_from_plugin(res.as_mut_ptr() as u32, SIZE as u32) } != 0 {
             return Err(Error::ShortInternalBuffer);

@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pluginop-common = { path = "../common" }
+pluginop-common = { path = "../common", features = ["wasm"] }
 bincode = "1"
 serde = { version = "1", features = ["derive"] }
 unix-time = "0.1"

@@ -3,15 +3,15 @@ use std::sync::{Arc, RwLock, Weak};
 use criterion::{criterion_group, criterion_main, Criterion};
 use pluginop::{
     api::{self, ConnectionToPlugin},
-    handler::{InternalArgs, PluginHandler},
+    handler::{PluginHandler},
     plugin::Env,
-    PluginizableConnection,
+    PluginizableConnection, Error,
 };
 use pluginop_common::{
     quic::{ConnectionField, RecoveryField},
-    ProtoOp,
+    ProtoOp, PluginVal,
 };
-use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Store, Value};
+use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
 
 /// Dummy object
 #[derive(Debug)]
@@ -102,61 +102,51 @@ fn memory_allocation_bench() {
     assert!(ok);
     let (po, a) = ProtoOp::from_name("check_data");
     assert!(locked_pcd.get_ph().provides(&po, a));
-    let internal_args = InternalArgs::default();
     let ph = locked_pcd.get_ph();
-    let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+    let res = ph.call(&po, &[]);
     assert!(res.is_ok());
-    assert_eq!(*res.unwrap(), [Value::I32(6)]);
+    assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
     let (po2, a2) = ProtoOp::from_name("free_data");
     assert!(locked_pcd.get_ph().provides(&po2, a2));
-    let internal_args = InternalArgs::default();
     let ph = locked_pcd.get_ph();
-    let _ = ph.call(&po2, &[], |_| {}, |_, r| r, internal_args);
-    let internal_args = InternalArgs::default();
-    let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
-    assert!(res.is_ok());
-    assert_eq!(*res.unwrap(), [Value::I32(-1)]);
+    let _ = ph.call(&po2, &[]);
+    let res = ph.call(&po, &[]);
+    assert!(res.is_err());
+        if let Error::OperationError(e) = res.unwrap_err() {
+            assert_eq!(e, -1);
+        } else {
+            assert!(false);
+        }
 }
 
 fn static_memory(locked_pcd: &mut PluginizableConnectionDummy) {
     let (po, a) = ProtoOp::from_name("get_mult_value");
     assert!(locked_pcd.get_ph().provides(&po, a));
-    let internal_args = InternalArgs::default();
     let ph = locked_pcd.get_ph();
-    let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+    let res = ph.call(&po, &[]);
     assert!(res.is_ok());
-    assert_eq!(*res.unwrap(), [Value::I64(0)]);
+    assert_eq!(*res.unwrap(), [PluginVal::I64(0)]);
     let (po2, a2) = ProtoOp::from_name("set_values");
     assert!(locked_pcd.get_ph().provides(&po2, a2));
-    let internal_args = InternalArgs::default();
     let ph = locked_pcd.get_ph();
     let res = ph.call(
         &po2,
         &[(2 as i32).into(), (3 as i32).into()],
-        |_| {},
-        |_, r| r,
-        internal_args,
     );
     assert!(res.is_ok());
-    let internal_args = InternalArgs::default();
-    let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+    let res = ph.call(&po, &[]);
     assert!(res.is_ok());
-    assert_eq!(*res.unwrap(), [Value::I64(6)]);
-    let internal_args = InternalArgs::default();
+    assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
     let ph = locked_pcd.get_ph();
     let res = ph.call(
         &po2,
         &[(0 as i32).into(), (0 as i32).into()],
-        |_| {},
-        |_, r| r,
-        internal_args,
     );
     assert!(res.is_ok());
-    let internal_args = InternalArgs::default();
     let ph = locked_pcd.get_ph();
-    let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+    let res = ph.call(&po, &[]);
     assert!(res.is_ok());
-    assert_eq!(*res.unwrap(), [Value::I64(0)]);
+    assert_eq!(*res.unwrap(), [PluginVal::I64(0)]);
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -171,7 +161,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     assert!(locked_pcd.get_ph().provides(&po, a));
     let ph = locked_pcd.get_ph();
     c.bench_function("run and return", |b| {
-        b.iter(|| ph.call(&po, &[], |_| {}, |_, r| r, InternalArgs::default()))
+        b.iter(|| ph.call(&po, &[]))
     });
 
     // Second test

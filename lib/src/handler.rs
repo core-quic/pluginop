@@ -6,14 +6,14 @@ use std::{
 };
 
 use log::error;
-use pluginop_common::{Anchor, Input, ProtoOp};
-use wasmer::{Engine, Exports, Function, FunctionEnv, Store, Value};
+use pluginop_common::{Anchor, PluginVal, ProtoOp};
+use wasmer::{Engine, Exports, FunctionEnv, Store};
 use wasmer_compiler_singlepass::Singlepass;
 
 use crate::{
     api::get_imports_with,
     plugin::{create_env, Env, Plugin, RawPtr},
-    Error, PluginizableConnection,
+    Error, PluginFunction, PluginizableConnection,
 };
 
 /// Get a store for plugins. Note that this function should be called once for a host.
@@ -24,7 +24,6 @@ fn create_store() -> Store {
 }
 
 /// A pinned `Vec` of plugins.
-#[derive(Debug)]
 struct PluginArray<P: PluginizableConnection> {
     /// The inner array.
     array: Vec<Plugin<P>>,
@@ -80,10 +79,6 @@ pub enum Permission {
     /// Permission to access the read byte buffer
     ReadBuffer,
 }
-
-/// Structure containing protocol operation arguments that are hidden from plugins.
-#[derive(Default)]
-pub struct InternalArgs;
 
 /// A default implementation of a protocol operation proposed by the host implementation.
 pub struct ProtocolOperationDefault {
@@ -151,7 +146,7 @@ impl<P: PluginizableConnection> PluginHandler<P> {
 
     /// Returns the first plugin that provides an implementation for `po` with the implementing
     /// function, or `None` if there is not.
-    fn get_first_plugin(&self, po: &ProtoOp) -> Option<(&Plugin<P>, &Function)> {
+    fn get_first_plugin(&self, po: &ProtoOp) -> Option<(&Plugin<P>, &PluginFunction)> {
         for p in self.plugins.iter() {
             if let Some(func) = p.get_func(po, Anchor::Replace) {
                 return Some((p, func));
@@ -161,19 +156,12 @@ impl<P: PluginizableConnection> PluginHandler<P> {
     }
 
     /// Invokes the protocol operation `po` and runs its anchors.
-    fn call_internal<R: 'static, B, A>(
+    fn call_internal(
         &self,
         pod: Option<&&ProtocolOperationDefault>,
         po: &ProtoOp,
-        params: &[Input],
-        mut before_call: B,
-        after_call: A,
-        _internal_args: InternalArgs,
-    ) -> Result<R, Error>
-    where
-        B: FnMut(&Env<P>),
-        A: FnMut(&Env<P>, Box<[Value]>) -> R,
-    {
+        params: &[PluginVal],
+    ) -> Result<Box<[PluginVal]>, Error> {
         // We have to handle transient arguments.
         // let mut old_transient_args = {
         //     let mut transient_args = self.transient_args.lock().unwrap();
@@ -188,13 +176,13 @@ impl<P: PluginizableConnection> PluginHandler<P> {
         // PRE part
         for p in self.plugins.iter() {
             if let Some(func) = p.get_func(po, Anchor::Pre) {
-                p.call(store, func, params, &mut before_call, |_, _| {})?;
+                p.call(store, func, params)?;
             }
         }
 
         // REPLACE part
         let res = match self.get_first_plugin(po) {
-            Some((p, func)) => p.call(store, func, params, &mut before_call, after_call)?,
+            Some((p, func)) => p.call(store, func, params)?,
             None => {
                 match pod {
                     Some(_pod) => {
@@ -219,7 +207,7 @@ impl<P: PluginizableConnection> PluginHandler<P> {
         // POST part
         for p in self.plugins.iter() {
             if let Some(func) = p.get_func(po, Anchor::Post) {
-                p.call(store, func, params, &mut before_call, |_, _| {})?;
+                p.call(store, func, params)?;
             }
         }
 
@@ -243,30 +231,12 @@ impl<P: PluginizableConnection> PluginHandler<P> {
     }
 
     /// Invokes the protocol operation `po` and runs its anchors.
-    pub fn call<R: 'static, B, A>(
-        &self,
-        po: &ProtoOp,
-        params: &[Input],
-        before_call: B,
-        after_call: A,
-        internal_args: InternalArgs,
-    ) -> Result<R, Error>
-    where
-        B: FnMut(&Env<P>),
-        A: FnMut(&Env<P>, Box<[Value]>) -> R,
-    {
+    pub fn call(&self, po: &ProtoOp, params: &[PluginVal]) -> Result<Box<[PluginVal]>, Error> {
         // trace!("Calling protocol operation {:?}", po);
 
         // TODO
         // let pod = self.default_protocol_operations.get(po);
 
-        self.call_internal(
-            None, /* pod */
-            po,
-            params,
-            before_call,
-            after_call,
-            internal_args,
-        )
+        self.call_internal(None /* pod */, po, params)
     }
 }

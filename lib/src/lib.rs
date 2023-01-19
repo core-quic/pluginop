@@ -1,13 +1,16 @@
 use handler::PluginHandler;
-use pluginop_common::ProtoOp;
+use pluginop_common::{ProtoOp};
 use wasmer::{Function, RuntimeError};
 
-#[derive(Debug, Default)]
+pub type PluginFunction = Function; // TypedFunction<PluginInputType, PluginOutputType>;
+
+#[derive(Default)]
 pub struct POCode {
-    pre: Option<Function>,
-    replace: Option<Function>,
-    post: Option<Function>,
+    pre: Option<PluginFunction>,
+    replace: Option<PluginFunction>,
+    post: Option<PluginFunction>,
 }
+
 pub trait PluginizableConnection: Sized + Send + Sync + 'static {
     fn get_conn(&mut self) -> &mut dyn api::ConnectionToPlugin<Self>;
     fn get_ph(&self) -> &PluginHandler<Self>;
@@ -19,16 +22,20 @@ pub enum Error {
     RuntimeError(RuntimeError),
     NoDefault(ProtoOp),
     OutputConversionError(String),
+    OperationError(i64),
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, RwLock, Weak};
 
-    use pluginop_common::quic::{ConnectionField, RecoveryField};
-    use wasmer::{Exports, FunctionEnv, FunctionEnvMut, Store, Value};
+    use pluginop_common::{
+        quic::{ConnectionField, RecoveryField},
+        PluginVal,
+    };
+    use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
 
-    use crate::{api::ConnectionToPlugin, handler::InternalArgs, plugin::Env};
+    use crate::{api::ConnectionToPlugin, plugin::Env};
 
     use super::*;
 
@@ -124,11 +131,10 @@ mod tests {
         assert!(ok);
         let (po, a) = ProtoOp::from_name("simple_call");
         assert!(locked_pcd.get_ph().provides(&po, a));
-        let internal_args = InternalArgs::default();
         let ph = locked_pcd.get_ph();
-        let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+        let res = ph.call(&po, &[]);
         assert!(res.is_ok());
-        assert_eq!(*res.unwrap(), [Value::I64(42)]);
+        assert_eq!(*res.unwrap(), []);
     }
 
     #[test]
@@ -141,20 +147,21 @@ mod tests {
         assert!(ok);
         let (po, a) = ProtoOp::from_name("check_data");
         assert!(locked_pcd.get_ph().provides(&po, a));
-        let internal_args = InternalArgs::default();
         let ph = locked_pcd.get_ph();
-        let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+        let res = ph.call(&po, &[]);
         assert!(res.is_ok());
-        assert_eq!(*res.unwrap(), [Value::I32(6)]);
+        assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
         let (po2, a2) = ProtoOp::from_name("free_data");
         assert!(locked_pcd.get_ph().provides(&po2, a2));
-        let internal_args = InternalArgs::default();
         let ph = locked_pcd.get_ph();
-        let _ = ph.call(&po2, &[], |_| {}, |_, r| r, internal_args);
-        let internal_args = InternalArgs::default();
-        let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
-        assert!(res.is_ok());
-        assert_eq!(*res.unwrap(), [Value::I32(-1)]);
+        let _ = ph.call(&po2, &[]);
+        let res = ph.call(&po, &[]);
+        assert!(res.is_err());
+        if let Error::OperationError(e) = res.unwrap_err() {
+            assert_eq!(e, -1);
+        } else {
+            assert!(false);
+        }
     }
 
     fn memory_run(path: &str) {
@@ -166,44 +173,27 @@ mod tests {
         assert!(ok);
         let (po, a) = ProtoOp::from_name("get_mult_value");
         assert!(locked_pcd.get_ph().provides(&po, a));
-        let internal_args = InternalArgs::default();
         let ph = locked_pcd.get_ph();
-        let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+        let res = ph.call(&po, &[]);
         assert!(res.is_ok());
-        assert_eq!(*res.unwrap(), [Value::I64(0)]);
+        assert_eq!(*res.unwrap(), [PluginVal::I64(0)]);
         let (po2, a2) = ProtoOp::from_name("set_values");
         assert!(locked_pcd.get_ph().provides(&po2, a2));
-        let internal_args = InternalArgs::default();
         let ph = locked_pcd.get_ph();
-        let res = ph.call(
-            &po2,
-            &[(2 as i32).into(), (3 as i32).into()],
-            |_| {},
-            |_, r| r,
-            internal_args,
-        );
+        let res = ph.call(&po2, &[(2 as i32).into(), (3 as i32).into()]);
         assert!(res.is_ok());
-        assert_eq!(*res.unwrap(), [Value::I64(0)]);
-        let internal_args = InternalArgs::default();
-        let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+        assert_eq!(*res.unwrap(), []);
+        let res = ph.call(&po, &[]);
         assert!(res.is_ok());
-        assert_eq!(*res.unwrap(), [Value::I64(6)]);
-        let internal_args = InternalArgs::default();
+        assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
         let ph = locked_pcd.get_ph();
-        let res = ph.call(
-            &po2,
-            &[(0 as i32).into(), (0 as i32).into()],
-            |_| {},
-            |_, r| r,
-            internal_args,
-        );
+        let res = ph.call(&po2, &[(0 as i32).into(), (0 as i32).into()]);
         assert!(res.is_ok());
-        assert_eq!(*res.unwrap(), [Value::I64(0)]);
-        let internal_args = InternalArgs::default();
+        assert_eq!(*res.unwrap(), []);
         let ph = locked_pcd.get_ph();
-        let res = ph.call(&po, &[], |_| {}, |_, r| r, internal_args);
+        let res = ph.call(&po, &[]);
         assert!(res.is_ok());
-        assert_eq!(*res.unwrap(), [Value::I64(0)]);
+        assert_eq!(*res.unwrap(), [PluginVal::I64(0)]);
     }
 
     #[test]
@@ -214,6 +204,63 @@ mod tests {
     #[test]
     fn inputs_support() {
         memory_run("../tests/inputs-support/inputs_support.wasm");
+    }
+
+    #[test]
+    fn input_outputs() {
+        let pcd = PluginizableConnectionDummy::new(exports_func_external_test);
+        let path = "../tests/input-outputs/input_outputs.wasm".to_string();
+        let mut locked_pcd = pcd.write().unwrap();
+        let pcd_ptr = &*locked_pcd as *const _;
+        let ok = locked_pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+        assert!(ok);
+        let (po, a) = ProtoOp::from_name("get_calc_value");
+        assert!(locked_pcd.get_ph().provides(&po, a));
+        let ph = locked_pcd.get_ph();
+        let res = ph.call(&po, &[]);
+        assert!(res.is_ok());
+        assert_eq!(
+            *res.unwrap(),
+            [
+                PluginVal::I32(1),
+                PluginVal::I32(-1),
+                PluginVal::I32(0),
+                PluginVal::I32(0)
+            ]
+        );
+        let (po2, a2) = ProtoOp::from_name("set_values");
+        assert!(locked_pcd.get_ph().provides(&po2, a2));
+        let ph = locked_pcd.get_ph();
+        let res = ph.call(&po2, &[(12 as i32).into(), (3 as i32).into()]);
+        assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), []);
+        let res = ph.call(&po, &[]);
+        assert!(res.is_ok());
+        assert_eq!(
+            *res.unwrap(),
+            [
+                PluginVal::I32(15),
+                PluginVal::I32(9),
+                PluginVal::I32(36),
+                PluginVal::I32(4)
+            ]
+        );
+        let ph = locked_pcd.get_ph();
+        let res = ph.call(&po2, &[(0 as i32).into(), (1 as i32).into()]);
+        assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), []);
+        let ph = locked_pcd.get_ph();
+        let res = ph.call(&po, &[]);
+        assert!(res.is_ok());
+        assert_eq!(
+            *res.unwrap(),
+            [
+                PluginVal::I32(1),
+                PluginVal::I32(-1),
+                PluginVal::I32(0),
+                PluginVal::I32(0)
+            ]
+        );
     }
 }
 

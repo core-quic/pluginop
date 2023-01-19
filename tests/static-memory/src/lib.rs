@@ -29,7 +29,9 @@ pub extern fn set_values(penv: &mut PluginEnv) -> i64 {
 }
 
 #[no_mangle]
-pub extern fn get_mult_value(_penv: &mut PluginEnv) -> i64 {
+pub extern fn get_mult_value(penv: &mut PluginEnv) -> i64 {
     let data = (*DATA).lock().unwrap();
-    ((*data).val1 * (*data).val2) as i64
+    let res = ((*data).val1 * (*data).val2) as i64;
+    penv.save_output(res.into());
+    0
 }
