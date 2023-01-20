@@ -78,7 +78,7 @@ pub enum Anchor {
 }
 
 fn extract_po_param(name: &str) -> Result<u64, ParseIntError> {
-    let end_num = &name[name.rfind('_').unwrap() + 1..];
+    let end_num = name.rfind('_').map(|i| &name[i + 1..]).unwrap_or("");
     u64::from_str_radix(end_num, 16)
 }
 

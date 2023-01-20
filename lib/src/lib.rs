@@ -13,7 +13,7 @@ pub struct POCode {
 
 pub trait PluginizableConnection: Sized + Send + Sync + 'static {
     fn get_conn(&mut self) -> &mut dyn api::ConnectionToPlugin<Self>;
-    fn get_ph(&self) -> &PluginHandler<Self>;
+    fn get_ph(&mut self) -> &mut PluginHandler<Self>;
 }
 
 /// An error that may happen during the operations of this library.
@@ -82,8 +82,8 @@ mod tests {
             &mut self.conn
         }
 
-        fn get_ph(&self) -> &PluginHandler<PluginizableConnectionDummy> {
-            &self.ph.as_ref().unwrap()
+        fn get_ph(&mut self) -> &mut PluginHandler<PluginizableConnectionDummy> {
+            self.ph.as_mut().unwrap()
         }
     }
 
@@ -267,3 +267,4 @@ mod tests {
 pub mod api;
 pub mod handler;
 pub mod plugin;
+mod rawptr;

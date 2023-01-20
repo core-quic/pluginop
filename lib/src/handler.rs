@@ -2,7 +2,6 @@ use std::{
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
     path::PathBuf,
-    sync::{Arc, Mutex},
 };
 
 use log::error;
@@ -12,7 +11,8 @@ use wasmer_compiler_singlepass::Singlepass;
 
 use crate::{
     api::get_imports_with,
-    plugin::{create_env, Env, Plugin, RawPtr},
+    plugin::{create_env, Env, Plugin},
+    rawptr::RawPtr,
     Error, PluginFunction, PluginizableConnection,
 };
 
@@ -43,9 +43,27 @@ impl<P: PluginizableConnection> DerefMut for PluginArray<P> {
     }
 }
 
+impl<P: PluginizableConnection> PluginArray<P> {
+    /// Returns `true` iif one of the plugins provides an implementation for the requested `po`.
+    fn provides(&self, po: &ProtoOp, anchor: Anchor) -> bool {
+        self.iter().any(|p| p.get_func(po, anchor).is_some())
+    }
+
+    /// Returns the first plugin that provides an implementation for `po` with the implementing
+    /// function, or `None` if there is not.
+    fn get_first_plugin(&self, po: &ProtoOp) -> Option<(&Plugin<P>, &PluginFunction)> {
+        for p in self.iter() {
+            if let Some(func) = p.get_func(po, Anchor::Replace) {
+                return Some((p, func));
+            }
+        }
+        None
+    }
+}
+
 pub struct PluginHandler<P: PluginizableConnection> {
     /// The store that served to instantiate plugins.
-    store: Arc<Mutex<Store>>,
+    store: Store,
     /// A pointer to the serving session. It can stay null if no plugin is inserted.
     conn: RawPtr<P>,
     /// Function creating an `Imports`.
@@ -92,9 +110,11 @@ pub struct ProtocolOperationDefault {
 }
 
 impl<P: PluginizableConnection> PluginHandler<P> {
+    /// Creates a new `PluginHandler`, enabling the execution of `Plugin`s inserted on the fly to
+    /// customize the behavior of a connection.
     pub fn new(exports_func: fn(&mut Store, &FunctionEnv<Env<P>>) -> Exports) -> Self {
         Self {
-            store: Arc::new(Mutex::new(create_store())),
+            store: create_store(),
             conn: RawPtr::null(),
             exports_func,
             plugins: PluginArray { array: Vec::new() },
@@ -119,16 +139,19 @@ impl<P: PluginizableConnection> PluginHandler<P> {
             return false;
         }
 
-        let store = &mut *self.store.lock().unwrap();
-        let env = FunctionEnv::new(store, create_env(self));
+        let self_ptr = self as *const _;
+        let store = &mut self.store;
+        let env = FunctionEnv::new(store, create_env(self_ptr));
         let exports = (self.exports_func)(store, &env);
         let imports = get_imports_with(exports, store, &env);
         match Plugin::new(plugin_fname, store, env, &imports) {
             Some(p) => {
                 self.plugins.push(p);
                 // Now the plugin is at its definitive area in memory, so we can initialize it.
-                self.plugins.last_mut().unwrap().initialize(store);
-                true
+                self.plugins
+                    .last_mut()
+                    .map(|p| p.initialize(store).is_ok())
+                    .unwrap_or(false)
             }
             None => {
                 error!("Failed to insert plugin with path {:?}", plugin_fname);
@@ -137,52 +160,27 @@ impl<P: PluginizableConnection> PluginHandler<P> {
         }
     }
 
-    /// Returns `true` iif one of the plugins provides an implementation for the requested `po`.
     pub fn provides(&self, po: &ProtoOp, anchor: Anchor) -> bool {
-        self.plugins
-            .iter()
-            .any(|p| p.get_func(po, anchor).is_some())
-    }
-
-    /// Returns the first plugin that provides an implementation for `po` with the implementing
-    /// function, or `None` if there is not.
-    fn get_first_plugin(&self, po: &ProtoOp) -> Option<(&Plugin<P>, &PluginFunction)> {
-        for p in self.plugins.iter() {
-            if let Some(func) = p.get_func(po, Anchor::Replace) {
-                return Some((p, func));
-            }
-        }
-        None
+        self.plugins.provides(po, anchor)
     }
 
     /// Invokes the protocol operation `po` and runs its anchors.
     fn call_internal(
-        &self,
+        &mut self,
         pod: Option<&&ProtocolOperationDefault>,
         po: &ProtoOp,
         params: &[PluginVal],
     ) -> Result<Box<[PluginVal]>, Error> {
-        // We have to handle transient arguments.
-        // let mut old_transient_args = {
-        //     let mut transient_args = self.transient_args.lock().unwrap();
-        //     let tmp = transient_args.take();
-        //     *transient_args = internal_args.transient.take();
-        //     tmp
-        // };
-
-        let mut store = self.store.lock().unwrap();
-        let store = &mut *store;
-
         // PRE part
         for p in self.plugins.iter() {
             if let Some(func) = p.get_func(po, Anchor::Pre) {
-                p.call(store, func, params)?;
+                p.call(&mut self.store, func, params)?;
             }
         }
 
         // REPLACE part
-        let res = match self.get_first_plugin(po) {
-            Some((p, func)) => p.call(store, func, params)?,
+        let res = match self.plugins.get_first_plugin(po) {
+            Some((p, func)) => p.call(&mut self.store, func, params)?,
             None => {
                 match pod {
                     Some(_pod) => {
@@ -207,31 +205,15 @@ impl<P: PluginizableConnection> PluginHandler<P> {
         // POST part
         for p in self.plugins.iter() {
             if let Some(func) = p.get_func(po, Anchor::Post) {
-                p.call(store, func, params)?;
+                p.call(&mut self.store, func, params)?;
             }
         }
-
-        // Finally, we have to clean up the transient arguments. We must remove all the previously
-        // added transient arguments that were consumed by this protocol operation. The only ones
-        // that are consumed are plain arguments. This happens only if a plugin was inserted at the
-        // REPLACE anchor.
-        // if let Some(otas) = &mut old_transient_args {
-        //     if let Some(po) = pod {
-        //         if let Some(op) = &mut otas.others_plain {
-        //             op.retain(|na| !po.named_args.contains(&na.name));
-        //         }
-        //     }
-        // }
-        // {
-        //     let mut transient_args = self.transient_args.lock().unwrap();
-        //     *transient_args = old_transient_args.take();
-        // }
 
         Ok(res)
     }
 
     /// Invokes the protocol operation `po` and runs its anchors.
-    pub fn call(&self, po: &ProtoOp, params: &[PluginVal]) -> Result<Box<[PluginVal]>, Error> {
+    pub fn call(&mut self, po: &ProtoOp, params: &[PluginVal]) -> Result<Box<[PluginVal]>, Error> {
         // trace!("Calling protocol operation {:?}", po);
 
         // TODO
