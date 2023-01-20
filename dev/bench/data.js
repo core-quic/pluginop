@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1674228337943,
+  "lastUpdate": 1674233641376,
   "repoUrl": "https://github.com/qdeconinck/pluginop",
   "entries": {
     "Pluginop benchmarks": [
@@ -185,6 +185,54 @@ window.BENCHMARK_DATA = {
             "name": "inputs support",
             "value": 4699,
             "range": "± 203",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "004ababef66ac4690c251e8880021da18915d7ca",
+          "message": "Merge pull request #9 from qdeconinck/week-refactoring\n\nrefactor this week's code",
+          "timestamp": "2023-01-20T17:46:52+01:00",
+          "tree_id": "a3c08f1ad2eb0e7f688a3ee30356e33e9f5fb49d",
+          "url": "https://github.com/qdeconinck/pluginop/commit/004ababef66ac4690c251e8880021da18915d7ca"
+        },
+        "date": 1674233639622,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "run and return",
+            "value": 339,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "memory allocation",
+            "value": 6655328,
+            "range": "± 496508",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "static memory",
+            "value": 4735,
+            "range": "± 34",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inputs support",
+            "value": 5149,
+            "range": "± 32",
             "unit": "ns/iter"
           }
         ]
