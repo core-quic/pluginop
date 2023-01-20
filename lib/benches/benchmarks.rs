@@ -56,8 +56,8 @@ impl PluginizableConnection for PluginizableConnectionDummy {
         &mut self.conn
     }
 
-    fn get_ph(&self) -> &PluginHandler<PluginizableConnectionDummy> {
-        &self.ph.as_ref().unwrap()
+    fn get_ph(&mut self) -> &mut PluginHandler<PluginizableConnectionDummy> {
+        self.ph.as_mut().unwrap()
     }
 }
 

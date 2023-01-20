@@ -38,27 +38,31 @@ fn save_output_from_plugin<P: PluginizableConnection>(
     ptr: WasmPtr<u8>,
     len: u32,
 ) -> i32 {
-    let instance = env.data().get_instance();
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
     let instance = instance.as_ref();
     let memory = match instance.exports.get_memory("memory") {
         Ok(m) => m,
-        Err(_) => return -1,
+        Err(_) => return -2,
     };
     let view = memory.view(&env);
     let output_cells = match ptr.slice(&view, len) {
         Ok(oc) => oc,
-        Err(_) => return -2,
+        Err(_) => return -3,
     };
     let output_serialized = match output_cells.read_to_vec() {
         Ok(os) => os,
-        Err(_) => return -3,
+        Err(_) => return -4,
     };
     match bincode::deserialize_from(&*output_serialized) {
         Ok(pv) => {
             env.data_mut().outputs.push(pv);
             0
         }
-        Err(_) => -4,
+        Err(_) => -5,
     }
 }
 
@@ -70,27 +74,31 @@ fn save_outputs_from_plugin<P: PluginizableConnection>(
     ptr: WasmPtr<u8>,
     len: u32,
 ) -> i32 {
-    let instance = env.data().get_instance();
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
     let instance = instance.as_ref();
     let memory = match instance.exports.get_memory("memory") {
         Ok(m) => m,
-        Err(_) => return -1,
+        Err(_) => return -2,
     };
     let view = memory.view(&env);
     let output_cells = match ptr.slice(&view, len) {
         Ok(oc) => oc,
-        Err(_) => return -2,
+        Err(_) => return -3,
     };
     let output_serialized = match output_cells.read_to_vec() {
         Ok(os) => os,
-        Err(_) => return -3,
+        Err(_) => return -4,
     };
     match bincode::deserialize_from(&*output_serialized) {
         Ok(pvs) => {
             *env.data_mut().outputs = pvs;
             0
         }
-        Err(_) => -4,
+        Err(_) => -5,
     }
 }
 
@@ -107,6 +115,8 @@ fn store_opaque_from_plugin<P: PluginizableConnection>(
     env_data.opaque_values.insert(tag, val);
 }
 
+const OPAQUE_ERR_VALUE: u64 = u64::MAX;
+
 /// Gets the value associated to `tag` from the opaque, persistant store maintained by the host
 /// implementation. If the `tag` is not present in the store, returns `u32::MAX`.
 ///
@@ -118,10 +128,7 @@ fn get_opaque_from_plugin<P: PluginizableConnection>(
     let env_data = env.data_mut();
     match env_data.opaque_values.get(&tag) {
         Some(v) => u64::from(*v),
-        None => {
-            // We need a well-known return value, so let's put MAX_INT
-            u64::MAX
-        }
+        None => OPAQUE_ERR_VALUE,
     }
 }
 
@@ -134,10 +141,7 @@ fn remove_opaque_from_plugin<P: PluginizableConnection>(
     let env_data = env.data_mut();
     match env_data.opaque_values.remove(&tag) {
         Some(v) => u64::from(v),
-        None => {
-            // We need a well-known return value, so let's put MAX_INT
-            u64::MAX
-        }
+        None => OPAQUE_ERR_VALUE,
     }
 }
 
@@ -152,21 +156,25 @@ fn get_input_from_plugin<P: PluginizableConnection>(
     mem_ptr: WasmPtr<u8>,
     mem_len: u32,
 ) -> i32 {
-    let instance = env.data().get_instance();
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
     let instance = instance.as_ref();
     let memory = match instance.exports.get_memory("memory") {
         Ok(m) => m,
-        Err(_) => return -1,
+        Err(_) => return -2,
     };
     let view = memory.view(&env);
     let input = match env.data().inputs.get(index as usize) {
         Some(i) => i,
-        None => return -2,
+        None => return -3,
     };
     // Sanity check to avoid memory overwrite.
     match bincode::serialized_size(input) {
-        Ok(l) if l > mem_len.into() => return -3,
-        Err(_) => return -4,
+        Ok(l) if l > mem_len.into() => return -4,
+        Err(_) => return -5,
         _ => {}
     };
     // SAFETY: Given that plugins are single-threaded per-connection, this does
@@ -174,7 +182,7 @@ fn get_input_from_plugin<P: PluginizableConnection>(
     let memory_slice = unsafe { view.data_unchecked_mut() };
     match bincode::serialize_into(&mut memory_slice[mem_ptr.offset() as usize..], input) {
         Ok(()) => 0,
-        Err(_) => -5,
+        Err(_) => -6,
     }
 }
 
@@ -188,17 +196,21 @@ fn get_inputs_from_plugin<P: PluginizableConnection>(
     mem_ptr: WasmPtr<u8>,
     mem_len: u32,
 ) -> i32 {
-    let instance = env.data().get_instance();
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
     let instance = instance.as_ref();
     let memory = match instance.exports.get_memory("memory") {
         Ok(m) => m,
-        Err(_) => return -1,
+        Err(_) => return -2,
     };
     let view = memory.view(&env);
     // Sanity check to avoid memory overwrite.
     match bincode::serialized_size(&*env.data().inputs) {
-        Ok(l) if l > mem_len.into() => return -2,
-        Err(_) => return -3,
+        Ok(l) if l > mem_len.into() => return -3,
+        Err(_) => return -4,
         _ => {}
     };
     // SAFETY: Given that plugins are single-threaded per-connection, this does
@@ -209,7 +221,7 @@ fn get_inputs_from_plugin<P: PluginizableConnection>(
         &*env.data().inputs,
     ) {
         Ok(()) => 0,
-        Err(_) => -4,
+        Err(_) => -5,
     }
 }
 
@@ -224,7 +236,11 @@ pub fn print_from_plugin<P: PluginizableConnection>(
     ptr: WasmPtr<u8>,
     len: u32,
 ) {
-    let instance = env.data().get_instance();
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return;
+    };
     let instance = instance.as_ref();
     let memory = match instance.exports.get_memory("memory") {
         Ok(m) => m,
@@ -234,7 +250,6 @@ pub fn print_from_plugin<P: PluginizableConnection>(
 
     // Uses the WasmPtr wrapper to simplify the operation to get ptr memory.
     if let Ok(s) = ptr.read_utf8_string(&view, len) {
-        // Print it!
         println!("{s}");
     }
 }

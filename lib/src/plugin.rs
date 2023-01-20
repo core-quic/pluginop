@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeSet,
-    fmt::{Debug, Pointer},
+    fmt::Debug,
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
     path::PathBuf,
@@ -9,75 +9,15 @@ use std::{
 };
 
 use fnv::FnvHashMap;
-use log::error;
+use log::{error, warn};
 use pluginop_common::{Anchor, PluginVal, ProtoOp};
 use wasmer::{FunctionEnv, Imports, Instance, Module, Store};
 
 use crate::{
     handler::{Permission, PluginHandler},
+    rawptr::RawPtr,
     Error, POCode, PluginFunction, PluginizableConnection,
 };
-
-pub struct RawPtr<T: ?Sized> {
-    inner: *const T,
-}
-
-impl<T: ?Sized> RawPtr<T> {
-    pub fn new(ptr: *const T) -> Self {
-        Self { inner: ptr }
-    }
-
-    pub fn is_null(&self) -> bool {
-        self.inner.is_null()
-    }
-}
-
-impl<T: ?Sized> Clone for RawPtr<T> {
-    fn clone(&self) -> Self {
-        Self { inner: self.inner }
-    }
-}
-
-impl<T: ?Sized> Copy for RawPtr<T> {}
-
-impl<T: ?Sized> Deref for RawPtr<T> {
-    type Target = *const T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<T: ?Sized> PartialEq for RawPtr<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner
-    }
-}
-
-impl<T: Sized> RawPtr<T> {
-    pub fn null() -> Self {
-        Self {
-            inner: std::ptr::null(),
-        }
-    }
-
-    pub fn ptr_eq(&self, ptr: *const T) -> bool {
-        std::ptr::eq(self.inner, ptr)
-    }
-}
-
-impl<T: ?Sized> Debug for RawPtr<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Pointer::fmt(&self.inner, f)
-        //f.debug_struct("RawPtr").field("inner", &self.inner).finish()
-    }
-}
-
-// SAFETY: Only true if T is pinned.
-unsafe impl<T: ?Sized> Send for RawPtr<T> {}
-
-// SAFETY: Only true if T is pinned.
-unsafe impl<T: ?Sized> Sync for RawPtr<T> {}
 
 /// An array of plugin-compatible values.
 #[derive(Debug, Default)]
@@ -123,7 +63,7 @@ pub struct Env<P: PluginizableConnection> {
 
 pub(crate) fn create_env<P: PluginizableConnection>(ph: *const PluginHandler<P>) -> Env<P> {
     Env {
-        _ph: RawPtr { inner: ph },
+        _ph: RawPtr::new(ph),
         instance: Weak::new(),
         permissions: BTreeSet::new(),
         initialized: false,
@@ -146,8 +86,8 @@ impl<P: PluginizableConnection> Env<P> {
         unsafe { &**self._ph }
     }
 
-    pub fn get_instance(&self) -> Arc<Pin<Box<Instance>>> {
-        self.instance.upgrade().unwrap()
+    pub fn get_instance(&self) -> Option<Arc<Pin<Box<Instance>>>> {
+        self.instance.upgrade()
     }
 }
 
@@ -174,12 +114,21 @@ impl<P: PluginizableConnection> Plugin<P> {
     ) -> Option<Self> {
         match std::fs::read(plugin_fname) {
             Ok(wasm) => {
-                let module = Module::from_binary(store, &wasm).expect("wasm compilation");
+                let module = match Module::from_binary(store, &wasm) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        error!("failed WASM compilation: {}", e);
+                        return None;
+                    }
+                };
 
                 match Instance::new(store, &module, imports) {
                     Ok(instance) => {
                         let mut plugin_state = [0u8; 4];
-                        getrandom::getrandom(&mut plugin_state).expect("cannot generate random");
+
+                        if let Err(e) = getrandom::getrandom(&mut plugin_state) {
+                            warn!("cannot generate random plugin state: {}", e);
+                        }
 
                         // XXX We could update the permissions later.
                         let permissions = &mut env.as_mut(store).permissions;
@@ -214,33 +163,27 @@ impl<P: PluginizableConnection> Plugin<P> {
         let mut pocodes: FnvHashMap<ProtoOp, POCode> = FnvHashMap::default();
 
         for (name, _) in instance.exports.iter() {
-            match instance.exports.get_typed_function(store, name) {
-                Ok(func) => {
-                    let func = func.clone();
+            if let Ok(func) = instance.exports.get_typed_function(store, name) {
+                let func = func.clone();
 
-                    let (po, a) = ProtoOp::from_name(name);
-                    match pocodes.get_mut(&po) {
-                        Some(poc) => match a {
+                let (po, a) = ProtoOp::from_name(name);
+                match pocodes.get_mut(&po) {
+                    Some(poc) => match a {
+                        Anchor::Pre => poc.pre = Some(func),
+                        Anchor::Replace => poc.replace = Some(func),
+                        Anchor::Post => poc.post = Some(func),
+                    },
+                    None => {
+                        let mut poc = POCode::default();
+                        match a {
                             Anchor::Pre => poc.pre = Some(func),
                             Anchor::Replace => poc.replace = Some(func),
                             Anchor::Post => poc.post = Some(func),
-                        },
-                        None => {
-                            let mut poc = POCode::default();
-                            match a {
-                                Anchor::Pre => poc.pre = Some(func),
-                                Anchor::Replace => poc.replace = Some(func),
-                                Anchor::Post => poc.post = Some(func),
-                            }
-                            pocodes.insert(po, poc);
                         }
-                    };
-                }
-                Err(e) => error!("Error: {e:?}"),
+                        pocodes.insert(po, poc);
+                    }
+                };
             }
-            // if let Ok(func) = instance.exports.get_typed_function(store, name) {
-
-            // }
         }
 
         pocodes
@@ -259,7 +202,7 @@ impl<P: PluginizableConnection> Plugin<P> {
     }
 
     /// Initializes the plugin.
-    pub(crate) fn initialize(&self, store: &mut Store) {
+    pub(crate) fn initialize(&self, store: &mut Store) -> Result<(), Error> {
         let env_mut = self.env.as_mut(store);
         env_mut.initialized = true;
 
@@ -269,8 +212,9 @@ impl<P: PluginizableConnection> Plugin<P> {
         // And call a potential `init` method provided by the plugin.
         let po = ProtoOp::Init;
         if let Some(func) = self.get_func(&po, Anchor::Replace) {
-            self.call(store, func, &[]).expect("error in init");
+            self.call(store, func, &[])?;
         }
+        Ok(())
     }
 
     /// Invokes the function called `function_name` with provided `params`.
