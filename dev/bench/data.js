@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1674211050815,
+  "lastUpdate": 1674228337943,
   "repoUrl": "https://github.com/qdeconinck/pluginop",
   "entries": {
     "Pluginop benchmarks": [
@@ -137,6 +137,54 @@ window.BENCHMARK_DATA = {
             "name": "inputs support",
             "value": 5346,
             "range": "± 10",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7bfa7fd43a88fe35077a64623cb40aa5137c27c1",
+          "message": "Merge pull request #8 from qdeconinck/typed-functions\n\nuse TypedFunctions to benefit from the ABI",
+          "timestamp": "2023-01-20T16:18:28+01:00",
+          "tree_id": "bfebce80580495d67a8d650be7d7da187dc0b7f3",
+          "url": "https://github.com/qdeconinck/pluginop/commit/7bfa7fd43a88fe35077a64623cb40aa5137c27c1"
+        },
+        "date": 1674228336212,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "run and return",
+            "value": 342,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "memory allocation",
+            "value": 7607627,
+            "range": "± 1501618",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "static memory",
+            "value": 4307,
+            "range": "± 283",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inputs support",
+            "value": 4699,
+            "range": "± 203",
             "unit": "ns/iter"
           }
         ]
