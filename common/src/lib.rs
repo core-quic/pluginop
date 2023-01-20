@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::{hash::Hash, net::SocketAddr, num::ParseIntError, time::Duration};
 use unix_time::Instant;
 
+pub type PluginInputType = u32;
+pub type PluginOutputType = i64;
+
 #[derive(Clone, Debug)]
 pub enum ConversionError {
     InvalidI32,
@@ -23,7 +26,7 @@ pub enum ConversionError {
 }
 
 // FIXME: move these protoops in their respective protocols.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, PartialOrd)]
 pub enum ProtoOp {
     Init,
 
@@ -190,10 +193,11 @@ impl ProtoOp {
     }
 }
 
-/// Inputs that can be passed to protocol operations.
+/// Values used to communicate with underlying plugins, either as inputs or
+/// outputs.
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub enum Input {
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
+pub enum PluginVal {
     /// A i32.
     I32(i32),
     /// A i64.
@@ -238,16 +242,22 @@ macro_rules! impl_from_try_from {
     };
 }
 
-impl_from_try_from!(Input, I32, i32, ConversionError, InvalidI32);
-impl_from_try_from!(Input, I64, i64, ConversionError, InvalidI64);
-impl_from_try_from!(Input, U32, u32, ConversionError, InvalidU32);
-impl_from_try_from!(Input, U64, u64, ConversionError, InvalidU64);
-impl_from_try_from!(Input, F32, f32, ConversionError, InvalidF32);
-impl_from_try_from!(Input, F64, f64, ConversionError, InvalidF64);
-impl_from_try_from!(Input, Duration, Duration, ConversionError, InvalidDuration);
-impl_from_try_from!(Input, Instant, Instant, ConversionError, InvalidInstant);
+impl_from_try_from!(PluginVal, I32, i32, ConversionError, InvalidI32);
+impl_from_try_from!(PluginVal, I64, i64, ConversionError, InvalidI64);
+impl_from_try_from!(PluginVal, U32, u32, ConversionError, InvalidU32);
+impl_from_try_from!(PluginVal, U64, u64, ConversionError, InvalidU64);
+impl_from_try_from!(PluginVal, F32, f32, ConversionError, InvalidF32);
+impl_from_try_from!(PluginVal, F64, f64, ConversionError, InvalidF64);
 impl_from_try_from!(
-    Input,
+    PluginVal,
+    Duration,
+    Duration,
+    ConversionError,
+    InvalidDuration
+);
+impl_from_try_from!(PluginVal, Instant, Instant, ConversionError, InvalidInstant);
+impl_from_try_from!(
+    PluginVal,
     SocketAddr,
     SocketAddr,
     ConversionError,

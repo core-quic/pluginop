@@ -10,12 +10,12 @@ use std::{
 
 use fnv::FnvHashMap;
 use log::error;
-use pluginop_common::{Anchor, Input, ProtoOp};
-use wasmer::{Function, FunctionEnv, Imports, Instance, Module, Store, Value};
+use pluginop_common::{Anchor, PluginVal, ProtoOp};
+use wasmer::{FunctionEnv, Imports, Instance, Module, Store, Value};
 
 use crate::{
     handler::{Permission, PluginHandler},
-    Error, POCode, PluginizableConnection,
+    Error, POCode, PluginFunction, PluginizableConnection,
 };
 
 pub struct RawPtr<T: ?Sized> {
@@ -79,41 +79,22 @@ unsafe impl<T: ?Sized> Send for RawPtr<T> {}
 // SAFETY: Only true if T is pinned.
 unsafe impl<T: ?Sized> Sync for RawPtr<T> {}
 
+/// An array of plugin-compatible values.
 #[derive(Debug, Default)]
-pub struct OutputArray {
-    inner: Vec<Vec<u8>>,
+pub struct PluginValArray {
+    inner: Vec<PluginVal>,
     _pin: PhantomPinned,
 }
 
-impl Deref for OutputArray {
-    type Target = Vec<Vec<u8>>;
+impl Deref for PluginValArray {
+    type Target = Vec<PluginVal>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl DerefMut for OutputArray {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct InputArray {
-    inner: Vec<Input>,
-    _pin: PhantomPinned,
-}
-
-impl Deref for InputArray {
-    type Target = Vec<Input>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl DerefMut for InputArray {
+impl DerefMut for PluginValArray {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -131,10 +112,10 @@ pub struct Env<P: PluginizableConnection> {
     /// Whether the associated plugin was initialized or not.
     initialized: bool,
     /// Contains the inputs specific to the called operation.
-    pub inputs: Pin<InputArray>,
+    pub inputs: Pin<PluginValArray>,
     /// Enables a plugin to output more than one (serializable) value, as returning more than 1
     /// output in a function is not FFI safe.
-    pub outputs: Pin<OutputArray>,
+    pub outputs: Pin<PluginValArray>,
     /// Store for opaque values used by the plugin. Typically, it contains pointers, and WASM
     /// pointers are 32-bit values.
     pub opaque_values: Pin<Box<FnvHashMap<u64, u32>>>,
@@ -146,8 +127,8 @@ pub(crate) fn create_env<P: PluginizableConnection>(ph: *const PluginHandler<P>)
         instance: Weak::new(),
         permissions: BTreeSet::new(),
         initialized: false,
-        inputs: Pin::new(InputArray::default()),
-        outputs: Pin::new(OutputArray::default()),
+        inputs: Pin::new(PluginValArray::default()),
+        outputs: Pin::new(PluginValArray::default()),
         opaque_values: Box::pin(FnvHashMap::default()),
     }
 }
@@ -156,6 +137,8 @@ impl<P: PluginizableConnection> Env<P> {
     fn sanitize(&mut self) {
         // Empty the inputs.
         self.inputs.clear();
+        // And the outputs.
+        self.outputs.clear();
     }
 
     fn _get_ph(&self) -> &PluginHandler<P> {
@@ -170,7 +153,6 @@ impl<P: PluginizableConnection> Env<P> {
 
 /// Structure holding the state of an inserted plugin. Because all the useful state is hold in the
 /// `Env` structure, this structure does not need to be public anymore.
-#[derive(Debug)]
 pub(crate) struct Plugin<P: PluginizableConnection> {
     /// The actual WASM instance.
     instance: Arc<Pin<Box<Instance>>>,
@@ -207,7 +189,7 @@ impl<P: PluginizableConnection> Plugin<P> {
                         permissions.insert(Permission::WriteBuffer);
                         permissions.insert(Permission::ReadBuffer);
 
-                        let pocodes = Plugin::<P>::get_pocodes(&instance);
+                        let pocodes = Plugin::<P>::get_pocodes(&instance, store);
 
                         return Some(Plugin {
                             instance: Arc::new(Box::pin(instance)),
@@ -228,38 +210,44 @@ impl<P: PluginizableConnection> Plugin<P> {
         None
     }
 
-    fn get_pocodes(instance: &Instance) -> FnvHashMap<ProtoOp, POCode> {
+    fn get_pocodes(instance: &Instance, _store: &mut Store) -> FnvHashMap<ProtoOp, POCode> {
         let mut pocodes: FnvHashMap<ProtoOp, POCode> = FnvHashMap::default();
 
         for (name, _) in instance.exports.iter() {
-            if let Ok(func) = instance.exports.get_function(name) {
-                let func = func.clone();
+            match instance.exports.get_function(name) {
+                Ok(func) => {
+                    let func = func.clone();
 
-                let (po, a) = ProtoOp::from_name(name);
-                match pocodes.get_mut(&po) {
-                    Some(poc) => match a {
-                        Anchor::Pre => poc.pre = Some(func),
-                        Anchor::Replace => poc.replace = Some(func),
-                        Anchor::Post => poc.post = Some(func),
-                    },
-                    None => {
-                        let mut poc = POCode::default();
-                        match a {
+                    let (po, a) = ProtoOp::from_name(name);
+                    match pocodes.get_mut(&po) {
+                        Some(poc) => match a {
                             Anchor::Pre => poc.pre = Some(func),
                             Anchor::Replace => poc.replace = Some(func),
                             Anchor::Post => poc.post = Some(func),
+                        },
+                        None => {
+                            let mut poc = POCode::default();
+                            match a {
+                                Anchor::Pre => poc.pre = Some(func),
+                                Anchor::Replace => poc.replace = Some(func),
+                                Anchor::Post => poc.post = Some(func),
+                            }
+                            pocodes.insert(po, poc);
                         }
-                        pocodes.insert(po, poc);
-                    }
-                };
+                    };
+                }
+                Err(e) => error!("Error: {e:?}"),
             }
+            // if let Ok(func) = instance.exports.get_typed_function(store, name) {
+
+            // }
         }
 
         pocodes
     }
 
     /// Returns the function providing code for the requested protocol operation and anchor.
-    pub(crate) fn get_func(&self, po: &ProtoOp, anchor: Anchor) -> Option<&Function> {
+    pub(crate) fn get_func(&self, po: &ProtoOp, anchor: Anchor) -> Option<&PluginFunction> {
         match self.pocodes.get(po) {
             Some(poc) => match anchor {
                 Anchor::Pre => poc.pre.as_ref(),
@@ -281,24 +269,17 @@ impl<P: PluginizableConnection> Plugin<P> {
         // And call a potential `init` method provided by the plugin.
         let po = ProtoOp::Init;
         if let Some(func) = self.get_func(&po, Anchor::Replace) {
-            self.call(store, func, &[], &mut |_| {}, |_, _| {})
-                .expect("error in init");
+            self.call(store, func, &[]).expect("error in init");
         }
     }
 
     /// Invokes the function called `function_name` with provided `params`.
-    pub fn call<B, A, R>(
+    pub fn call(
         &self,
         store: &mut Store,
-        func: &Function,
-        params: &[Input],
-        before_call: &mut B,
-        mut after_call: A,
-    ) -> Result<R, Error>
-    where
-        B: FnMut(&Env<P>),
-        A: FnMut(&Env<P>, Box<[Value]>) -> R,
-    {
+        func: &PluginFunction,
+        params: &[PluginVal],
+    ) -> Result<Box<[PluginVal]>, Error> {
         let env_mut = self.env.as_mut(store);
         // Before launching any call, we should sanitize the running `env`.
         env_mut.sanitize();
@@ -307,10 +288,15 @@ impl<P: PluginizableConnection> Plugin<P> {
             env_mut.inputs.push(*p);
         }
 
-        before_call(self.env.as_ref(store));
         // debug!("Calling PO with param {:?}", params);
         match func.call(store, &[self.plugin_state.into()]) {
-            Ok(res) => Ok(after_call(self.env.as_ref(store), res)),
+            Ok(res) if *res == [Value::I64(0)] => {
+                Ok((*self.env.as_ref(store).outputs).clone().into_boxed_slice())
+            }
+            Ok(err) => Err(Error::OperationError(match err[0] {
+                Value::I64(i) => i,
+                _ => 0,
+            })),
             Err(re) => Err(Error::RuntimeError(re)),
         }
     }
