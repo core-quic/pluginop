@@ -1,8 +1,8 @@
 use handler::PluginHandler;
-use pluginop_common::{ProtoOp};
-use wasmer::{Function, RuntimeError};
+use pluginop_common::{PluginInputType, PluginOutputType, ProtoOp};
+use wasmer::{RuntimeError, TypedFunction};
 
-pub type PluginFunction = Function; // TypedFunction<PluginInputType, PluginOutputType>;
+pub type PluginFunction = TypedFunction<PluginInputType, PluginOutputType>;
 
 #[derive(Default)]
 pub struct POCode {

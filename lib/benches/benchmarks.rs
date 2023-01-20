@@ -3,13 +3,13 @@ use std::sync::{Arc, RwLock, Weak};
 use criterion::{criterion_group, criterion_main, Criterion};
 use pluginop::{
     api::{self, ConnectionToPlugin},
-    handler::{PluginHandler},
+    handler::PluginHandler,
     plugin::Env,
-    PluginizableConnection, Error,
+    Error, PluginizableConnection,
 };
 use pluginop_common::{
     quic::{ConnectionField, RecoveryField},
-    ProtoOp, PluginVal,
+    PluginVal, ProtoOp,
 };
 use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
 
@@ -112,11 +112,11 @@ fn memory_allocation_bench() {
     let _ = ph.call(&po2, &[]);
     let res = ph.call(&po, &[]);
     assert!(res.is_err());
-        if let Error::OperationError(e) = res.unwrap_err() {
-            assert_eq!(e, -1);
-        } else {
-            assert!(false);
-        }
+    if let Error::OperationError(e) = res.unwrap_err() {
+        assert_eq!(e, -1);
+    } else {
+        assert!(false);
+    }
 }
 
 fn static_memory(locked_pcd: &mut PluginizableConnectionDummy) {
@@ -129,19 +129,13 @@ fn static_memory(locked_pcd: &mut PluginizableConnectionDummy) {
     let (po2, a2) = ProtoOp::from_name("set_values");
     assert!(locked_pcd.get_ph().provides(&po2, a2));
     let ph = locked_pcd.get_ph();
-    let res = ph.call(
-        &po2,
-        &[(2 as i32).into(), (3 as i32).into()],
-    );
+    let res = ph.call(&po2, &[(2 as i32).into(), (3 as i32).into()]);
     assert!(res.is_ok());
     let res = ph.call(&po, &[]);
     assert!(res.is_ok());
     assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
     let ph = locked_pcd.get_ph();
-    let res = ph.call(
-        &po2,
-        &[(0 as i32).into(), (0 as i32).into()],
-    );
+    let res = ph.call(&po2, &[(0 as i32).into(), (0 as i32).into()]);
     assert!(res.is_ok());
     let ph = locked_pcd.get_ph();
     let res = ph.call(&po, &[]);
@@ -160,9 +154,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let (po, a) = ProtoOp::from_name("simple_call");
     assert!(locked_pcd.get_ph().provides(&po, a));
     let ph = locked_pcd.get_ph();
-    c.bench_function("run and return", |b| {
-        b.iter(|| ph.call(&po, &[]))
-    });
+    c.bench_function("run and return", |b| b.iter(|| ph.call(&po, &[])));
 
     // Second test
     c.bench_function("memory allocation", |b| {

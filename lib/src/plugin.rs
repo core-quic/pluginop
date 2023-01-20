@@ -11,7 +11,7 @@ use std::{
 use fnv::FnvHashMap;
 use log::error;
 use pluginop_common::{Anchor, PluginVal, ProtoOp};
-use wasmer::{FunctionEnv, Imports, Instance, Module, Store, Value};
+use wasmer::{FunctionEnv, Imports, Instance, Module, Store};
 
 use crate::{
     handler::{Permission, PluginHandler},
@@ -210,11 +210,11 @@ impl<P: PluginizableConnection> Plugin<P> {
         None
     }
 
-    fn get_pocodes(instance: &Instance, _store: &mut Store) -> FnvHashMap<ProtoOp, POCode> {
+    fn get_pocodes(instance: &Instance, store: &mut Store) -> FnvHashMap<ProtoOp, POCode> {
         let mut pocodes: FnvHashMap<ProtoOp, POCode> = FnvHashMap::default();
 
         for (name, _) in instance.exports.iter() {
-            match instance.exports.get_function(name) {
+            match instance.exports.get_typed_function(store, name) {
                 Ok(func) => {
                     let func = func.clone();
 
@@ -289,14 +289,9 @@ impl<P: PluginizableConnection> Plugin<P> {
         }
 
         // debug!("Calling PO with param {:?}", params);
-        match func.call(store, &[self.plugin_state.into()]) {
-            Ok(res) if *res == [Value::I64(0)] => {
-                Ok((*self.env.as_ref(store).outputs).clone().into_boxed_slice())
-            }
-            Ok(err) => Err(Error::OperationError(match err[0] {
-                Value::I64(i) => i,
-                _ => 0,
-            })),
+        match func.call(store, self.plugin_state) {
+            Ok(res) if res == 0 => Ok((*self.env.as_ref(store).outputs).clone().into_boxed_slice()),
+            Ok(err) => Err(Error::OperationError(err)),
             Err(re) => Err(Error::RuntimeError(re)),
         }
     }
