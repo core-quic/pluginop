@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1674576484815,
+  "lastUpdate": 1674580630074,
   "repoUrl": "https://github.com/qdeconinck/pluginop",
   "entries": {
     "Pluginop benchmarks": [
@@ -293,6 +293,66 @@ window.BENCHMARK_DATA = {
             "name": "increase-max-data",
             "value": 3940,
             "range": "± 9",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b61d50a1d82a8439c7e13cf2003a4a5f4fa87071",
+          "message": "Merge pull request #13 from qdeconinck/type-alias\n\nAdd type alias for WASM types",
+          "timestamp": "2023-01-24T18:07:31+01:00",
+          "tree_id": "4bbec31385d23efdaef5ae881d087a318659d889",
+          "url": "https://github.com/qdeconinck/pluginop/commit/b61d50a1d82a8439c7e13cf2003a4a5f4fa87071"
+        },
+        "date": 1674580628500,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "run and return",
+            "value": 392,
+            "range": "± 36",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "memory allocation",
+            "value": 10169335,
+            "range": "± 2125610",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "static memory",
+            "value": 5948,
+            "range": "± 581",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inputs support",
+            "value": 6386,
+            "range": "± 543",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "input outputs",
+            "value": 8025,
+            "range": "± 796",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "increase-max-data",
+            "value": 4557,
+            "range": "± 208",
             "unit": "ns/iter"
           }
         ]
