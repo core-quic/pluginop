@@ -299,7 +299,7 @@ pub enum RcvPacketField {
 
 /// This type can possibly change over time. Offering directly raw bytes to plugins limits
 /// monitoring capabilities. Maybe a Bytes API?
-pub type Bytes = Vec<u8>;
+pub type Bytes = u64;
 
 /// Some additional fields that may be present in QUICv1, but are not ensure to be always
 /// present.
@@ -386,7 +386,7 @@ pub struct AckRange {
 /// The ACK frame uses the least significant bit (that is, type 0x03) to indicate ECN feedback and
 /// report receipt of QUIC packets with associated ECN codepoints of ECT(0), ECT(1), or CE in the
 /// packet's IP header. ECN Counts are only present when the ACK frame type is 0x03.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct EcnCount {
     /// A variable-length integer representing the total number of packets received with the ECT(0)
@@ -414,7 +414,8 @@ pub struct ConnectionId {
 }
 
 /// A QUIC frame structure, as close as it is encoded on the wire.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
+#[non_exhaustive]
 #[repr(C)]
 pub enum Frame {
     Padding(PaddingFrame),
@@ -444,7 +445,7 @@ pub enum Frame {
 /// the size of a packet. Padding can be used to increase an initial client packet to the
 /// minimum required size, or to provide protection against traffic analysis for protected
 /// packets.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct PaddingFrame {
     /// The number of consecutive padding frames put together.
@@ -453,7 +454,7 @@ pub struct PaddingFrame {
 
 /// Endpoints can use PING frames (type=0x01) to verify that their peers are still alive or to
 /// check reachability to the peer.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct PingFrame;
 
@@ -477,7 +478,7 @@ pub struct PingFrame;
 /// Version Negotiation and Retry packets cannot be acknowledged because they do not contain a
 /// packet number. Rather than relying on ACK frames, these packets are implicitly acknowledged
 /// by the next Initial packet sent by the client.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct ACKFrame {
     /// A variable-length integer representing the largest packet number the peer is
@@ -503,7 +504,7 @@ pub struct ACKFrame {
     pub first_ack_range: u64,
     /// Contains additional ranges of packets that are alternately not acknowledged (Gap) and
     /// acknowledged (ACK Range).
-    pub ack_ranges: Vec<AckRange>,
+    pub ack_ranges: Bytes,
     /// The three ECN Counts.
     pub ecn_counts: Option<EcnCount>,
 }
@@ -515,7 +516,7 @@ pub struct ACKFrame {
 /// frames on the identified stream. A receiver of RESET_STREAM can discard any data that it
 /// already received on that stream.An endpoint that receives a RESET_STREAM frame for a
 /// send-only stream MUST terminate the connection with error STREAM_STATE_ERROR.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct ResetStreamFrame {
     /// A variable-length integer encoding of the Stream ID of the stream being terminated.
@@ -537,7 +538,7 @@ pub struct ResetStreamFrame {
 /// created MUST be treated as a connection error of type STREAM_STATE_ERROR. An endpoint that
 /// receives a STOP_SENDING frame for a receive-only stream MUST terminate the connection with
 /// error STREAM_STATE_ERROR.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct StopSendingFrame {
     /// A variable-length integer carrying the Stream ID of the stream being ignored.
@@ -552,7 +553,7 @@ pub struct StopSendingFrame {
 /// an in-order stream of bytes. CRYPTO frames are functionally identical to STREAM frames,
 /// except that they do not bear a stream identifier; they are not flow controlled; and they do
 /// not carry markers for optional offset, optional length, and the end of the stream.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct CryptoFrame {
     /// A variable-length integer specifying the byte offset in the stream for the data in this
@@ -567,7 +568,7 @@ pub struct CryptoFrame {
 
 /// A server sends a NEW_TOKEN frame (type=0x07) to provide the client with a token to send in
 /// the header of an Initial packet for a future connection.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct NewTokenFrame {
     /// A variable-length integer specifying the length of the token in bytes.
@@ -594,7 +595,7 @@ pub struct NewTokenFrame {
 /// An endpoint MUST terminate the connection with error STREAM_STATE_ERROR if it receives a
 /// STREAM frame for a locally-initiated stream that has not yet been created, or for a
 /// send-only stream.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct StreamFrame {
     /// A variable-length integer indicating the stream ID of the stream.
@@ -616,7 +617,7 @@ pub struct StreamFrame {
 
 /// A MAX_DATA frame (type=0x10) is used in flow control to inform the peer of the maximum
 /// amount of data that can be sent on the connection as a whole.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct MaxDataFrame {
     /// A variable-length integer indicating the maximum amount of data that can be sent on the
@@ -632,7 +633,7 @@ pub struct MaxDataFrame {
 /// treated as a connection error of type STREAM_STATE_ERROR. An endpoint that receives a
 /// MAX_STREAM_DATA frame for a receive-only stream MUST terminate the connection with error
 /// STREAM_STATE_ERROR.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct MaxStreamDataFrame {
     /// The stream ID of the stream that is affected encoded as a variable-length integer.
@@ -646,7 +647,7 @@ pub struct MaxStreamDataFrame {
 /// of a given type it is permitted to open. A MAX_STREAMS frame with a type of 0x12 applies to
 /// bidirectional streams, and a MAX_STREAMS frame with a type of 0x13 applies to
 /// unidirectional streams.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct MaxStreamsFrame {
     /// Indicates if this frame concerns unidirectional streams (type=0x13) or bidirectional
@@ -662,7 +663,7 @@ pub struct MaxStreamsFrame {
 /// A sender SHOULD send a DATA_BLOCKED frame (type=0x14) when it wishes to send data, but is
 /// unable to do so due to connection-level flow control. DATA_BLOCKED frames can be used as
 /// input to tuning of flow control algorithms.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct DataBlockedFrame {
     /// A variable-length integer indicating the connection-level limit at which blocking
@@ -676,7 +677,7 @@ pub struct DataBlockedFrame {
 ///
 /// An endpoint that receives a STREAM_DATA_BLOCKED frame for a send-only stream MUST terminate
 /// the connection with error STREAM_STATE_ERROR.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct StreamDataBlockedFrame {
     /// A variable-length integer indicating the stream that is blocked due to flow control.
@@ -694,7 +695,7 @@ pub struct StreamDataBlockedFrame {
 ///
 /// A STREAMS_BLOCKED frame does not open the stream, but informs the peer that a new stream
 /// was needed and the stream limit prevented the creation of the stream.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct StreamsBlockedFrame {
     /// Indicates if this frame concerns unidirectional streams (type=0x17) or bidirectional
@@ -710,7 +711,7 @@ pub struct StreamsBlockedFrame {
 /// An endpoint sends a NEW_CONNECTION_ID frame (type=0x18) to provide its peer with
 /// alternative connection IDs that can be used to break linkability when migrating
 /// connections.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct NewConnectionIdFrame {
     /// The sequence number assigned to the connection ID by the sender, encoded as a
@@ -723,10 +724,10 @@ pub struct NewConnectionIdFrame {
     /// FRAME_ENCODING_ERROR.
     pub length: u8,
     /// A connection ID of the specified length.
-    pub connection_id: Vec<u8>,
+    pub connection_id: Bytes,
     /// A 128-bit value that will be used for a stateless reset when the associated connection
     /// ID is used. Probably easier to manipulate as a Vec<u8>.
-    pub stateless_reset_token: Vec<u8>,
+    pub stateless_reset_token: Bytes,
 }
 
 /// An endpoint sends a RETIRE_CONNECTION_ID frame (type=0x19) to indicate that it will no
@@ -737,7 +738,7 @@ pub struct NewConnectionIdFrame {
 ///
 /// Retiring a connection ID invalidates the stateless reset token associated with that
 /// connection ID.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct RetireConnectionIdFrame {
     /// The sequence number of the connection ID being retired.
@@ -746,7 +747,7 @@ pub struct RetireConnectionIdFrame {
 
 /// Endpoints can use PATH_CHALLENGE frames (type=0x1a) to check reachability to the peer and
 /// for path validation during connection migration.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct PathChallengeFrame {
     /// This 8-byte field contains arbitrary data.
@@ -754,7 +755,7 @@ pub struct PathChallengeFrame {
 }
 
 /// A PATH_RESPONSE frame (type=0x1b) is sent in response to a PATH_CHALLENGE frame.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct PathResponseFrame {
     /// This 8-byte field contains arbitrary data.
@@ -769,7 +770,7 @@ pub struct PathResponseFrame {
 ///
 /// If there are open streams that have not been explicitly closed, they are implicitly closed
 /// when the connection is closed.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct ConnectionCloseFrame {
     /// A variable-length integer error code that indicates the reason for closing this
@@ -794,7 +795,7 @@ pub struct ConnectionCloseFrame {
 
 /// The server uses a HANDSHAKE_DONE frame (type=0x1e) to signal confirmation of the handshake
 /// to the client.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct HandshakeDoneFrame;
 
@@ -819,7 +820,7 @@ pub struct HandshakeDoneFrame;
 /// are not included in flow control unless specified in the extension.
 ///
 /// An IANA registry is used to manage the assignment of frame types
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct ExtensionFrame {
     /// The corresponding frame type of the extension frame.
@@ -831,20 +832,20 @@ pub struct ExtensionFrame {
 }
 
 /// Inputs that can be passed to protocol operations for the QUIC protocol.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
-pub enum QInput {
-    /// The QUIC Header.
-    Header(Header),
+pub enum QVal {
+    // /// The QUIC Header.
+    // Header(Header),
     /// The QUIC Frame.
     Frame(Frame),
-    /// The next packet to be sent.
-    SentPacket(SentPacket),
+    // /// The next packet to be sent.
+    // SentPacket(SentPacket),
 }
 
 // impl From<Header> for Input {
 //     fn from(h: Header) -> Self {
-//         Self::QUIC(QInput::Header(h))
+//         Self::QUIC(QVal::Header(h))
 //     }
 // }
 
@@ -853,7 +854,7 @@ pub enum QInput {
 
 //     fn try_from(value: Input) -> Result<Self, Self::Error> {
 //         match value {
-//             Input::QUIC(QInput::Header(h)) => Ok(h),
+//             Input::QUIC(QVal::Header(h)) => Ok(h),
 //             _ => Err(ConversionError::InvalidHeader),
 //         }
 //     }
@@ -861,7 +862,7 @@ pub enum QInput {
 
 // impl From<Frame> for Input {
 //     fn from(f: Frame) -> Self {
-//         Self::QUIC(QInput::Frame(f))
+//         Self::QUIC(QVal::Frame(f))
 //     }
 // }
 
@@ -870,7 +871,7 @@ pub enum QInput {
 
 //     fn try_from(value: Input) -> Result<Self, Self::Error> {
 //         match value {
-//             Input::QUIC(QInput::Frame(f)) => Ok(f),
+//             Input::QUIC(QVal::Frame(f)) => Ok(f),
 //             _ => Err(ConversionError::InvalidFrame),
 //         }
 //     }
@@ -878,7 +879,7 @@ pub enum QInput {
 
 // impl From<SentPacket> for Input {
 //     fn from(sp: SentPacket) -> Self {
-//         Input::QUIC(QInput::SentPacket(sp))
+//         Input::QUIC(QVal::SentPacket(sp))
 //     }
 // }
 
@@ -887,7 +888,7 @@ pub enum QInput {
 
 //     fn try_from(value: Input) -> Result<Self, Self::Error> {
 //         match value {
-//             Input::QUIC(QInput::SentPacket(sp)) => Ok(sp),
+//             Input::QUIC(QVal::SentPacket(sp)) => Ok(sp),
 //             _ => Err(ConversionError::InvalidSentPacket),
 //         }
 //     }

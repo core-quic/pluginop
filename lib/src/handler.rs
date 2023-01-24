@@ -1,4 +1,5 @@
 use std::{
+    cell::UnsafeCell,
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
     path::PathBuf,
@@ -12,7 +13,7 @@ use wasmer_compiler_singlepass::Singlepass;
 use crate::{
     api::get_imports_with,
     plugin::{create_env, Env, Plugin},
-    rawptr::RawPtr,
+    rawptr::RawMutPtr,
     Error, PluginFunction, PluginizableConnection,
 };
 
@@ -63,9 +64,9 @@ impl<P: PluginizableConnection> PluginArray<P> {
 
 pub struct PluginHandler<P: PluginizableConnection> {
     /// The store that served to instantiate plugins.
-    store: Store,
+    store: UnsafeCell<Store>,
     /// A pointer to the serving session. It can stay null if no plugin is inserted.
-    conn: RawPtr<P>,
+    conn: RawMutPtr<Box<P>>,
     /// Function creating an `Imports`.
     exports_func: fn(&mut Store, &FunctionEnv<Env<P>>) -> Exports,
     /// The actual container of the plugins.
@@ -114,8 +115,8 @@ impl<P: PluginizableConnection> PluginHandler<P> {
     /// customize the behavior of a connection.
     pub fn new(exports_func: fn(&mut Store, &FunctionEnv<Env<P>>) -> Exports) -> Self {
         Self {
-            store: create_store(),
-            conn: RawPtr::null(),
+            store: UnsafeCell::new(create_store()),
+            conn: RawMutPtr::null(),
             exports_func,
             plugins: PluginArray { array: Vec::new() },
             _pin: PhantomPinned,
@@ -131,17 +132,16 @@ impl<P: PluginizableConnection> PluginHandler<P> {
     ///
     /// When inserting the plugin, the caller provides the pointer to the connection context through
     /// `ptr`. **This pointer must be `Pin`**.
-    pub fn insert_plugin(&mut self, plugin_fname: &PathBuf, conn: *const P) -> bool {
+    pub fn insert_plugin(&mut self, plugin_fname: &PathBuf, conn: *const Box<P>) -> bool {
         if self.conn.is_null() {
-            self.conn = RawPtr::new(conn);
-        } else if !self.conn.ptr_eq(conn) {
+            self.conn = RawMutPtr::new(conn as *const _ as *mut _)
+        } else if !self.conn.ptr_eq(conn as *const _ as *mut _) {
             error!("Trying to attach a same PH to different connections");
             return false;
         }
-
-        let self_ptr = self as *const _;
-        let store = &mut self.store;
-        let env = FunctionEnv::new(store, create_env(self_ptr));
+        let ph_ptr = self as *mut _;
+        let store = unsafe { &mut *self.store.get() };
+        let env = FunctionEnv::new(store, create_env(RawMutPtr::new(ph_ptr)));
         let exports = (self.exports_func)(store, &env);
         let imports = get_imports_with(exports, store, &env);
         match Plugin::new(plugin_fname, store, env, &imports) {
@@ -150,7 +150,7 @@ impl<P: PluginizableConnection> PluginHandler<P> {
                 // Now the plugin is at its definitive area in memory, so we can initialize it.
                 self.plugins
                     .last_mut()
-                    .map(|p| p.initialize(store).is_ok())
+                    .map(|p| p.initialize(unsafe { &mut *self.store.get() }).is_ok())
                     .unwrap_or(false)
             }
             None => {
@@ -164,9 +164,29 @@ impl<P: PluginizableConnection> PluginHandler<P> {
         self.plugins.provides(po, anchor)
     }
 
+    /// Gets an immutable reference to the serving connection.
+    pub fn get_conn(&self) -> Option<&P> {
+        if self.conn.is_null() {
+            None
+        } else {
+            // SAFETY: The pluginizable conn is pinned and implements `!Unpin`.
+            Some(unsafe { &**self.conn })
+        }
+    }
+
+    /// Gets an mutable reference to the serving connection.
+    pub fn get_conn_mut(&mut self) -> Option<&mut Box<P>> {
+        if self.conn.is_null() {
+            None
+        } else {
+            // SAFETY: The pluginizable conn is pinned and implements `!Unpin`.
+            Some(unsafe { &mut **self.conn })
+        }
+    }
+
     /// Invokes the protocol operation `po` and runs its anchors.
     fn call_internal(
-        &mut self,
+        &self,
         pod: Option<&&ProtocolOperationDefault>,
         po: &ProtoOp,
         params: &[PluginVal],
@@ -174,13 +194,13 @@ impl<P: PluginizableConnection> PluginHandler<P> {
         // PRE part
         for p in self.plugins.iter() {
             if let Some(func) = p.get_func(po, Anchor::Pre) {
-                p.call(&mut self.store, func, params)?;
+                p.call(unsafe { &mut *self.store.get() }, func, params)?;
             }
         }
 
         // REPLACE part
         let res = match self.plugins.get_first_plugin(po) {
-            Some((p, func)) => p.call(&mut self.store, func, params)?,
+            Some((p, func)) => p.call(unsafe { &mut *self.store.get() }, func, params)?,
             None => {
                 match pod {
                     Some(_pod) => {
@@ -205,7 +225,7 @@ impl<P: PluginizableConnection> PluginHandler<P> {
         // POST part
         for p in self.plugins.iter() {
             if let Some(func) = p.get_func(po, Anchor::Post) {
-                p.call(&mut self.store, func, params)?;
+                p.call(unsafe { &mut *self.store.get() }, func, params)?;
             }
         }
 
@@ -213,7 +233,7 @@ impl<P: PluginizableConnection> PluginHandler<P> {
     }
 
     /// Invokes the protocol operation `po` and runs its anchors.
-    pub fn call(&mut self, po: &ProtoOp, params: &[PluginVal]) -> Result<Box<[PluginVal]>, Error> {
+    pub fn call(&self, po: &ProtoOp, params: &[PluginVal]) -> Result<Box<[PluginVal]>, Error> {
         // trace!("Calling protocol operation {:?}", po);
 
         // TODO

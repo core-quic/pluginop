@@ -15,7 +15,7 @@ use wasmer::{FunctionEnv, Imports, Instance, Module, Store};
 
 use crate::{
     handler::{Permission, PluginHandler},
-    rawptr::RawPtr,
+    rawptr::RawMutPtr,
     Error, POCode, PluginFunction, PluginizableConnection,
 };
 
@@ -42,9 +42,8 @@ impl DerefMut for PluginValArray {
 
 #[derive(Debug)]
 pub struct Env<P: PluginizableConnection> {
-    /// The raw pointer to the plugin handler. Because `PluginHandler` is pinned,
-    /// this is safe.
-    _ph: RawPtr<PluginHandler<P>>,
+    /// The underlying plugin handler holding the plugin running this environment.
+    ph: RawMutPtr<PluginHandler<P>>,
     /// The (weak) reference to the instance of the plugin. The value is set when
     instance: Weak<Pin<Box<Instance>>>,
     /// The set of internal field permissions granted to the plugin.
@@ -61,9 +60,9 @@ pub struct Env<P: PluginizableConnection> {
     pub opaque_values: Pin<Box<FnvHashMap<u64, u32>>>,
 }
 
-pub(crate) fn create_env<P: PluginizableConnection>(ph: *const PluginHandler<P>) -> Env<P> {
+pub(crate) fn create_env<P: PluginizableConnection>(ph: RawMutPtr<PluginHandler<P>>) -> Env<P> {
     Env {
-        _ph: RawPtr::new(ph),
+        ph,
         instance: Weak::new(),
         permissions: BTreeSet::new(),
         initialized: false,
@@ -81,13 +80,18 @@ impl<P: PluginizableConnection> Env<P> {
         self.outputs.clear();
     }
 
-    fn _get_ph(&self) -> &PluginHandler<P> {
-        // SAFETY: This is valid since `PluginHandler` is pinned and cannot be moved.
-        unsafe { &**self._ph }
-    }
-
     pub fn get_instance(&self) -> Option<Arc<Pin<Box<Instance>>>> {
         self.instance.upgrade()
+    }
+
+    pub fn get_ph(&mut self) -> Option<&mut PluginHandler<P>> {
+        if self.ph.is_null() {
+            None
+        } else {
+            // SAFETY: The plugin handler has the `PhantomPinned` marker, but we need to take care
+            // of the mutable calls on it.
+            Some(unsafe { &mut **self.ph })
+        }
     }
 }
 
