@@ -23,6 +23,7 @@ pub enum ConversionError {
     InvalidHeader,
     InvalidSentPacket,
     InvalidSocketAddr,
+    InvalidQVal,
 }
 
 // FIXME: move these protoops in their respective protocols.
@@ -216,13 +217,12 @@ pub enum PluginVal {
     Instant(Instant),
     /// A socket address.
     SocketAddr(SocketAddr),
-    // TODO: handle complex structures.
-    ///// QUIC specific inputs.
-    // QUIC(quic::QInput),
+    /// QUIC specific inputs.
+    QUIC(quic::QVal),
 }
 
 macro_rules! impl_from_try_from {
-    ($e:ident, $v:ident, $t:ident, $err:ident, $verr:ident) => {
+    ($e:ident, $v:ident, $t:ty, $err:ident, $verr:ident) => {
         impl From<$t> for $e {
             fn from(v: $t) -> Self {
                 $e::$v(v)
@@ -263,5 +263,6 @@ impl_from_try_from!(
     ConversionError,
     InvalidSocketAddr
 );
+impl_from_try_from!(PluginVal, QUIC, quic::QVal, ConversionError, InvalidQVal);
 
 pub mod quic;

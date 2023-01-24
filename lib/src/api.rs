@@ -1,20 +1,23 @@
-use std::sync::{Arc, RwLock, Weak};
-
 use pluginop_common::quic::{ConnectionField, RecoveryField};
 use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Imports, Store, WasmPtr};
 
 use crate::{plugin::Env, PluginizableConnection};
 
+pub enum CTPError {
+    BadType,
+    SerializeError,
+}
+
 /// A trait that needs to be implemented by the host implementation to provide
 /// plugins information from the host.
-pub trait ConnectionToPlugin<'a, P: PluginizableConnection>: Send {
+pub trait ConnectionToPlugin<'a, P: PluginizableConnection>: Send + Unpin {
     /// Gets the related `ConnectionField` and writes it as a serialized value in `w`.
     /// It is up to the plugin to correctly handle the value and perform the serialization.
-    fn get_connection(&self, w: &mut [u8], field: ConnectionField) -> bincode::Result<()>;
+    fn get_connection(&self, field: ConnectionField, w: &mut [u8]) -> bincode::Result<()>;
     /// Sets the related `ConnectionField` to the provided value, that was serialized with content
     /// `value`. It is this function responsibility to correctly convert the
     /// input to the right type.
-    fn set_connection(&mut self, field: ConnectionField, value: &[u8]);
+    fn set_connection(&mut self, field: ConnectionField, value: &[u8]) -> Result<(), CTPError>;
     /// Gets the related `RecoveryField` and writes it as a serialized value in `w`. It is up to the
     /// plugin to correctly handle the value and perform the serialization.
     fn get_recovery(&self, w: &mut [u8], field: RecoveryField) -> bincode::Result<()>;
@@ -22,10 +25,6 @@ pub trait ConnectionToPlugin<'a, P: PluginizableConnection>: Send {
     /// `value`. It is this function responsibility to correctly convert the
     /// input to the right type.
     fn set_recovery(&mut self, field: RecoveryField, value: &[u8]);
-    /// Sets the pluginizable connection.
-    fn set_pluginizable_conn(&mut self, pc: &Arc<RwLock<P>>);
-    /// Gets the pluginizable connection.
-    fn get_pluginizable_conn(&self) -> Option<&Weak<RwLock<P>>>;
 }
 
 // -------------------------------- API FUNCTIONS ----------------------------------
@@ -254,6 +253,108 @@ pub fn print_from_plugin<P: PluginizableConnection>(
     }
 }
 
+/// Gets a specific connection field.
+///
+/// Function intended to be part of the Plugin API.
+pub fn get_connection_from_plugin<P: PluginizableConnection>(
+    mut env: FunctionEnvMut<Env<P>>,
+    field_ptr: WasmPtr<u8>,
+    field_len: u32,
+    res_ptr: WasmPtr<u8>,
+    res_len: u32,
+) -> i64 {
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -2,
+    };
+    let view = memory.view(&env);
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked_mut() };
+    let field = match bincode::deserialize_from(
+        &memory_slice[field_ptr.offset() as usize..(field_ptr.offset() + field_len) as usize],
+    ) {
+        Ok(f) => f,
+        Err(_) => return -3,
+    };
+    let ph = if let Some(ph) = env.data_mut().get_ph() {
+        ph
+    } else {
+        return -4;
+    };
+    let conn = match ph.get_conn() {
+        Some(c) => c,
+        None => return -5,
+    };
+    match conn.get_conn().get_connection(
+        field,
+        &mut memory_slice[res_ptr.offset() as usize..(res_ptr.offset() + res_len) as usize],
+    ) {
+        Ok(_) => 0,
+        Err(_) => -6,
+    }
+}
+
+/// Gets a specific connection field.
+///
+/// Function intended to be part of the Plugin API.
+pub fn set_connection_from_plugin<P: PluginizableConnection>(
+    mut env: FunctionEnvMut<Env<P>>,
+    field_ptr: WasmPtr<u8>,
+    field_len: u32,
+    val_ptr: WasmPtr<u8>,
+    val_len: u32,
+) -> i64 {
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -2,
+    };
+    let view = memory.view(&env);
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked() };
+    let field = match bincode::deserialize_from(
+        &memory_slice[field_ptr.offset() as usize..(field_ptr.offset() + field_len) as usize],
+    ) {
+        Ok(f) => f,
+        Err(_) => return -3,
+    };
+    let ph = if let Some(ph) = env.data_mut().get_ph() {
+        ph
+    } else {
+        return -4;
+    };
+    let conn = match ph.get_conn_mut() {
+        Some(c) => c,
+        None => return -5,
+    };
+    match conn.get_conn_mut().set_connection(
+        field,
+        &memory_slice[val_ptr.offset() as usize..(val_ptr.offset() + val_len) as usize],
+    ) {
+        Ok(()) => 0,
+        Err(_) => -6,
+    }
+}
+
+macro_rules! exports_insert {
+    ($e:ident, $s:ident, $env:ident, $f:ident) => {
+        $e.insert(stringify!($f), Function::new_typed_with_env($s, $env, $f));
+    };
+}
+
 /// Gets the imports that are common to any implementation.
 ///
 /// The host implementation still needs to privide the following functions:
@@ -265,38 +366,16 @@ pub fn get_imports_with<P: PluginizableConnection>(
     env: &FunctionEnv<Env<P>>,
 ) -> Imports {
     // Place here all the functions that are common to any host.
-    exports.insert(
-        "save_output_from_plugin",
-        Function::new_typed_with_env(store, env, save_output_from_plugin),
-    );
-    exports.insert(
-        "save_outputs_from_plugin",
-        Function::new_typed_with_env(store, env, save_outputs_from_plugin),
-    );
-    exports.insert(
-        "store_opaque_from_plugin",
-        Function::new_typed_with_env(store, env, store_opaque_from_plugin),
-    );
-    exports.insert(
-        "get_opaque_from_plugin",
-        Function::new_typed_with_env(store, env, get_opaque_from_plugin),
-    );
-    exports.insert(
-        "remove_opaque_from_plugin",
-        Function::new_typed_with_env(store, env, remove_opaque_from_plugin),
-    );
-    exports.insert(
-        "get_input_from_plugin",
-        Function::new_typed_with_env(store, env, get_input_from_plugin),
-    );
-    exports.insert(
-        "get_inputs_from_plugin",
-        Function::new_typed_with_env(store, env, get_inputs_from_plugin),
-    );
-    exports.insert(
-        "print_from_plugin",
-        Function::new_typed_with_env(store, env, print_from_plugin),
-    );
+    exports_insert!(exports, store, env, save_output_from_plugin);
+    exports_insert!(exports, store, env, save_outputs_from_plugin);
+    exports_insert!(exports, store, env, store_opaque_from_plugin);
+    exports_insert!(exports, store, env, get_opaque_from_plugin);
+    exports_insert!(exports, store, env, remove_opaque_from_plugin);
+    exports_insert!(exports, store, env, get_input_from_plugin);
+    exports_insert!(exports, store, env, get_inputs_from_plugin);
+    exports_insert!(exports, store, env, print_from_plugin);
+    exports_insert!(exports, store, env, get_connection_from_plugin);
+    exports_insert!(exports, store, env, set_connection_from_plugin);
 
     let mut imports = Imports::new();
     imports.register_namespace("env", exports);

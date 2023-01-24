@@ -18,6 +18,8 @@ const SIZE: usize = 1500;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Error {
+    APICallError,
+    BadType,
     ShortInternalBuffer,
     SerializeError,
 }
@@ -61,7 +63,12 @@ extern "C" {
         res_len: u32,
     ) -> i64;
     /* Sets a connection field */
-    fn set_connection_from_plugin(field_ptr: u32, field_len: u32, value_ptr: u32, value_len: u32);
+    fn set_connection_from_plugin(
+        field_ptr: u32,
+        field_len: u32,
+        value_ptr: u32,
+        value_len: u32,
+    ) -> i64;
     /* Gets a recovery field */
     fn get_recovery_from_plugin(field_ptr: u32, field_len: u32, res_ptr: u32, res_len: u32) -> i64;
     /* Sets a recovery field */
@@ -248,39 +255,46 @@ impl PluginEnv {
     }
 
     /// Gets a connection field.
-    pub fn get_connection<'de, T>(field: quic::ConnectionField) -> T
+    pub fn get_connection<T>(&self, field: quic::ConnectionField) -> Result<T>
     where
-        T: Deserialize<'de>,
+        T: TryFrom<PluginVal>,
     {
-        let serialized_field = bincode::serialize(&field).expect("serialized field");
+        let serialized_field = bincode::serialize(&field).map_err(|_| Error::SerializeError)?;
         let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
-        unsafe {
-            // FIXME we should handle error
+        let err = unsafe {
             get_connection_from_plugin(
                 serialized_field.as_ptr() as u32,
                 serialized_field.len() as u32,
                 res.as_mut_ptr() as u32,
                 SIZE as u32,
-            );
+            )
+        };
+        if err != 0 {
+            return Err(Error::APICallError);
         }
         let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-        bincode::deserialize(slice).expect("the requested type is not correct")
+        let plugin_val: PluginVal =
+            bincode::deserialize(slice).map_err(|_| Error::SerializeError)?;
+        plugin_val.try_into().map_err(|_| Error::BadType)
     }
 
     /// Sets a connection field.
-    pub fn set_connection<T>(field: quic::ConnectionField, v: T)
+    pub fn set_connection<T>(&mut self, field: quic::ConnectionField, v: T) -> Result<()>
     where
-        T: Serialize,
+        T: Into<PluginVal>,
     {
-        let serialized_field = bincode::serialize(&field).expect("serialized field");
-        let serialized_value = bincode::serialize(&v).expect("serialized value");
-        unsafe {
+        let serialized_field = bincode::serialize(&field).map_err(|_| Error::SerializeError)?;
+        let serialized_value = bincode::serialize(&v.into()).map_err(|_| Error::SerializeError)?;
+        match unsafe {
             set_connection_from_plugin(
                 serialized_field.as_ptr() as u32,
                 serialized_field.len() as u32,
                 serialized_value.as_ptr() as u32,
                 serialized_value.len() as u32,
-            );
+            )
+        } {
+            0 => Ok(()),
+            _ => Err(Error::APICallError),
         }
     }
 
