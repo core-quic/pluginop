@@ -7,6 +7,9 @@ use unix_time::Instant;
 
 pub type PluginInputType = u32;
 pub type PluginOutputType = i64;
+pub type WASMPtr = u32;
+pub type WASMLen = u32;
+pub type APIResult = i64;
 
 #[derive(Clone, Debug)]
 pub enum ConversionError {
