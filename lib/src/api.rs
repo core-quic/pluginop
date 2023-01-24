@@ -1,4 +1,7 @@
-use pluginop_common::quic::{ConnectionField, RecoveryField};
+use pluginop_common::{
+    quic::{ConnectionField, RecoveryField},
+    APIResult, WASMLen,
+};
 use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Imports, Store, WasmPtr};
 
 use crate::{plugin::Env, PluginizableConnection};
@@ -35,8 +38,8 @@ pub trait ConnectionToPlugin<'a, P: PluginizableConnection>: Send + Unpin {
 fn save_output_from_plugin<P: PluginizableConnection>(
     mut env: FunctionEnvMut<Env<P>>,
     ptr: WasmPtr<u8>,
-    len: u32,
-) -> i32 {
+    len: WASMLen,
+) -> APIResult {
     let instance = if let Some(i) = env.data().get_instance() {
         i
     } else {
@@ -71,8 +74,8 @@ fn save_output_from_plugin<P: PluginizableConnection>(
 fn save_outputs_from_plugin<P: PluginizableConnection>(
     mut env: FunctionEnvMut<Env<P>>,
     ptr: WasmPtr<u8>,
-    len: u32,
-) -> i32 {
+    len: WASMLen,
+) -> APIResult {
     let instance = if let Some(i) = env.data().get_instance() {
         i
     } else {
@@ -153,8 +156,8 @@ fn get_input_from_plugin<P: PluginizableConnection>(
     env: FunctionEnvMut<Env<P>>,
     index: u32,
     mem_ptr: WasmPtr<u8>,
-    mem_len: u32,
-) -> i32 {
+    mem_len: WASMLen,
+) -> APIResult {
     let instance = if let Some(i) = env.data().get_instance() {
         i
     } else {
@@ -193,8 +196,8 @@ fn get_input_from_plugin<P: PluginizableConnection>(
 fn get_inputs_from_plugin<P: PluginizableConnection>(
     env: FunctionEnvMut<Env<P>>,
     mem_ptr: WasmPtr<u8>,
-    mem_len: u32,
-) -> i32 {
+    mem_len: WASMLen,
+) -> APIResult {
     let instance = if let Some(i) = env.data().get_instance() {
         i
     } else {
@@ -233,7 +236,7 @@ fn get_inputs_from_plugin<P: PluginizableConnection>(
 pub fn print_from_plugin<P: PluginizableConnection>(
     env: FunctionEnvMut<Env<P>>,
     ptr: WasmPtr<u8>,
-    len: u32,
+    len: WASMLen,
 ) {
     let instance = if let Some(i) = env.data().get_instance() {
         i
@@ -259,9 +262,9 @@ pub fn print_from_plugin<P: PluginizableConnection>(
 pub fn get_connection_from_plugin<P: PluginizableConnection>(
     mut env: FunctionEnvMut<Env<P>>,
     field_ptr: WasmPtr<u8>,
-    field_len: u32,
+    field_len: WASMLen,
     res_ptr: WasmPtr<u8>,
-    res_len: u32,
+    res_len: WASMLen,
 ) -> i64 {
     let instance = if let Some(i) = env.data().get_instance() {
         i
@@ -307,9 +310,9 @@ pub fn get_connection_from_plugin<P: PluginizableConnection>(
 pub fn set_connection_from_plugin<P: PluginizableConnection>(
     mut env: FunctionEnvMut<Env<P>>,
     field_ptr: WasmPtr<u8>,
-    field_len: u32,
+    field_len: WASMLen,
     val_ptr: WasmPtr<u8>,
-    val_len: u32,
+    val_len: WASMLen,
 ) -> i64 {
     let instance = if let Some(i) = env.data().get_instance() {
         i
