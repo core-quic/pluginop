@@ -25,26 +25,26 @@ fn create_store() -> Store {
 }
 
 /// A pinned `Vec` of plugins.
-struct PluginArray<P: PluginizableConnection> {
+struct PluginArray {
     /// The inner array.
-    array: Vec<Plugin<P>>,
+    array: Vec<Plugin>,
 }
 
-impl<P: PluginizableConnection> Deref for PluginArray<P> {
-    type Target = Vec<Plugin<P>>;
+impl Deref for PluginArray {
+    type Target = Vec<Plugin>;
 
     fn deref(&self) -> &Self::Target {
         &self.array
     }
 }
 
-impl<P: PluginizableConnection> DerefMut for PluginArray<P> {
+impl DerefMut for PluginArray {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.array
     }
 }
 
-impl<P: PluginizableConnection> PluginArray<P> {
+impl PluginArray {
     /// Returns `true` iif one of the plugins provides an implementation for the requested `po`.
     fn provides(&self, po: &ProtoOp, anchor: Anchor) -> bool {
         self.iter().any(|p| p.get_func(po, anchor).is_some())
@@ -52,7 +52,7 @@ impl<P: PluginizableConnection> PluginArray<P> {
 
     /// Returns the first plugin that provides an implementation for `po` with the implementing
     /// function, or `None` if there is not.
-    fn get_first_plugin(&self, po: &ProtoOp) -> Option<(&Plugin<P>, &PluginFunction)> {
+    fn get_first_plugin(&self, po: &ProtoOp) -> Option<(&Plugin, &PluginFunction)> {
         for p in self.iter() {
             if let Some(func) = p.get_func(po, Anchor::Replace) {
                 return Some((p, func));
@@ -62,20 +62,20 @@ impl<P: PluginizableConnection> PluginArray<P> {
     }
 }
 
-pub struct PluginHandler<P: PluginizableConnection> {
+pub struct PluginHandler {
     /// The store that served to instantiate plugins.
     store: UnsafeCell<Store>,
     /// A pointer to the serving session. It can stay null if no plugin is inserted.
-    conn: RawMutPtr<Box<P>>,
+    conn: RawMutPtr<Box<dyn PluginizableConnection>>,
     /// Function creating an `Imports`.
-    exports_func: fn(&mut Store, &FunctionEnv<Env<P>>) -> Exports,
+    exports_func: fn(&mut Store, &FunctionEnv<Env>) -> Exports,
     /// The actual container of the plugins.
-    plugins: PluginArray<P>,
+    plugins: PluginArray,
     /// Force this structure to be pinned.
     _pin: PhantomPinned,
 }
 
-impl<P: PluginizableConnection> std::fmt::Debug for PluginHandler<P> {
+impl std::fmt::Debug for PluginHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PluginHandler")
             .field("store", &self.store)
@@ -110,10 +110,10 @@ pub struct ProtocolOperationDefault {
     // use_transient: UseTransientStructs,
 }
 
-impl<P: PluginizableConnection> PluginHandler<P> {
+impl PluginHandler {
     /// Creates a new `PluginHandler`, enabling the execution of `Plugin`s inserted on the fly to
     /// customize the behavior of a connection.
-    pub fn new(exports_func: fn(&mut Store, &FunctionEnv<Env<P>>) -> Exports) -> Self {
+    pub fn new(exports_func: fn(&mut Store, &FunctionEnv<Env>) -> Exports) -> Self {
         Self {
             store: UnsafeCell::new(create_store()),
             conn: RawMutPtr::null(),
@@ -132,7 +132,11 @@ impl<P: PluginizableConnection> PluginHandler<P> {
     ///
     /// When inserting the plugin, the caller provides the pointer to the connection context through
     /// `ptr`. **This pointer must be `Pin`**.
-    pub fn insert_plugin(&mut self, plugin_fname: &PathBuf, conn: *const Box<P>) -> bool {
+    pub fn insert_plugin(
+        &mut self,
+        plugin_fname: &PathBuf,
+        conn: *const Box<dyn PluginizableConnection>,
+    ) -> bool {
         if self.conn.is_null() {
             self.conn = RawMutPtr::new(conn as *const _ as *mut _)
         } else if !self.conn.ptr_eq(conn as *const _ as *mut _) {
@@ -165,22 +169,22 @@ impl<P: PluginizableConnection> PluginHandler<P> {
     }
 
     /// Gets an immutable reference to the serving connection.
-    pub fn get_conn(&self) -> Option<&P> {
+    pub fn get_conn(&self) -> Option<&dyn PluginizableConnection> {
         if self.conn.is_null() {
             None
         } else {
             // SAFETY: The pluginizable conn is pinned and implements `!Unpin`.
-            Some(unsafe { &**self.conn })
+            Some(unsafe { &***self.conn })
         }
     }
 
     /// Gets an mutable reference to the serving connection.
-    pub fn get_conn_mut(&mut self) -> Option<&mut Box<P>> {
+    pub fn get_conn_mut(&mut self) -> Option<&mut dyn PluginizableConnection> {
         if self.conn.is_null() {
             None
         } else {
             // SAFETY: The pluginizable conn is pinned and implements `!Unpin`.
-            Some(unsafe { &mut **self.conn })
+            Some(unsafe { &mut ***self.conn })
         }
     }
 

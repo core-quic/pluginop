@@ -3,6 +3,8 @@ use unix_time::Instant;
 
 use serde::{Deserialize, Serialize};
 
+use crate::{ConversionError, PluginVal};
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[repr(C)]
 pub enum FrameAckElliciting {
@@ -303,7 +305,7 @@ pub type Bytes = u64;
 
 /// Some additional fields that may be present in QUICv1, but are not ensure to be always
 /// present.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct HeaderExt {
     /// The packet number.
@@ -318,7 +320,7 @@ pub struct HeaderExt {
 }
 
 /// A QUIC packet header structure, as close as it is encoded on the wire.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub struct Header {
     /// The first byte of the header, defining its type + version-specific bits.
@@ -330,8 +332,9 @@ pub struct Header {
     /// The source connection ID. A 0-length connection ID is Some of an empty Vec, absence of
     /// source connection ID is None.
     pub source_cid: Option<Bytes>,
-    /// Supported version, only present in a Version Negotiation packet.
-    pub supported_versions: Option<Vec<u32>>,
+    /// Supported version, only present in a Version Negotiation packet. Should represents a
+    /// `Vec<u32>`.
+    pub supported_versions: Option<Bytes>,
     /// Additional fields that are not guaranteed to stay in the invariants. The host implementation
     /// may provide some information here for received packets, but it is not mandatory. All fields
     /// being part of the header but requiring decryption are put there. Hence, prior to decryption
@@ -831,17 +834,54 @@ pub struct ExtensionFrame {
     pub tag: u64,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
+#[repr(C)]
+/// Network-layer information about the packet being received.
+pub struct RcvInfo {
+    /// The source address of the received packet.
+    pub from: SocketAddr,
+    /// The destination address of the received packet.
+    pub to: SocketAddr,
+}
+
 /// Inputs that can be passed to protocol operations for the QUIC protocol.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(C)]
 pub enum QVal {
-    // /// The QUIC Header.
-    // Header(Header),
+    /// The QUIC Header.
+    Header(Header),
     /// The QUIC Frame.
     Frame(Frame),
+    /// Reception information.
+    RcvInfo(RcvInfo),
     // /// The next packet to be sent.
     // SentPacket(SentPacket),
 }
+
+macro_rules! impl_from_try_from_qval {
+    ($e:ident, $v:ident, $t:ty, $err:ident, $verr:ident) => {
+        impl From<$t> for $e {
+            fn from(v: $t) -> Self {
+                $e::QUIC(QVal::$v(v))
+            }
+        }
+
+        impl TryFrom<$e> for $t {
+            type Error = $err;
+
+            fn try_from(v: $e) -> Result<Self, Self::Error> {
+                match v {
+                    $e::QUIC(QVal::$v(v)) => Ok(v),
+                    _ => Err($err::$verr),
+                }
+            }
+        }
+    };
+}
+
+impl_from_try_from_qval!(PluginVal, Header, Header, ConversionError, InvalidQVal);
+impl_from_try_from_qval!(PluginVal, Frame, Frame, ConversionError, InvalidQVal);
+impl_from_try_from_qval!(PluginVal, RcvInfo, RcvInfo, ConversionError, InvalidQVal);
 
 // impl From<Header> for Input {
 //     fn from(h: Header) -> Self {
