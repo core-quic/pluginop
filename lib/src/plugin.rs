@@ -10,7 +10,7 @@ use std::{
 
 use fnv::FnvHashMap;
 use log::{error, warn};
-use pluginop_common::{Anchor, PluginVal, ProtoOp};
+use pluginop_common::{Anchor, PluginOp, PluginVal};
 use wasmer::{FunctionEnv, Imports, Instance, Module, Store};
 
 use crate::{
@@ -103,7 +103,7 @@ pub(crate) struct Plugin {
     // The environment accessible to plugins.
     env: FunctionEnv<Env>,
     /// A hash table to the functions contained in the instance.
-    pocodes: Pin<Box<FnvHashMap<ProtoOp, POCode>>>,
+    pocodes: Pin<Box<FnvHashMap<PluginOp, POCode>>>,
     /// Opaque value provided as argument to the plugin.
     plugin_state: u32,
 }
@@ -163,14 +163,14 @@ impl Plugin {
         None
     }
 
-    fn get_pocodes(instance: &Instance, store: &mut Store) -> FnvHashMap<ProtoOp, POCode> {
-        let mut pocodes: FnvHashMap<ProtoOp, POCode> = FnvHashMap::default();
+    fn get_pocodes(instance: &Instance, store: &mut Store) -> FnvHashMap<PluginOp, POCode> {
+        let mut pocodes: FnvHashMap<PluginOp, POCode> = FnvHashMap::default();
 
         for (name, _) in instance.exports.iter() {
             if let Ok(func) = instance.exports.get_typed_function(store, name) {
                 let func = func.clone();
 
-                let (po, a) = ProtoOp::from_name(name);
+                let (po, a) = PluginOp::from_name(name);
                 match pocodes.get_mut(&po) {
                     Some(poc) => match a {
                         Anchor::Pre => poc.pre = Some(func),
@@ -194,7 +194,7 @@ impl Plugin {
     }
 
     /// Returns the function providing code for the requested protocol operation and anchor.
-    pub(crate) fn get_func(&self, po: &ProtoOp, anchor: Anchor) -> Option<&PluginFunction> {
+    pub(crate) fn get_func(&self, po: &PluginOp, anchor: Anchor) -> Option<&PluginFunction> {
         match self.pocodes.get(po) {
             Some(poc) => match anchor {
                 Anchor::Pre => poc.pre.as_ref(),
@@ -214,7 +214,7 @@ impl Plugin {
         env_mut.instance = Arc::<Pin<Box<Instance>>>::downgrade(&self.instance);
 
         // And call a potential `init` method provided by the plugin.
-        let po = ProtoOp::Init;
+        let po = PluginOp::Init;
         if let Some(func) = self.get_func(&po, Anchor::Replace) {
             self.call(store, func, &[])?;
         }

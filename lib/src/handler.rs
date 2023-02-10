@@ -6,7 +6,7 @@ use std::{
 };
 
 use log::error;
-use pluginop_common::{Anchor, PluginVal, ProtoOp};
+use pluginop_common::{Anchor, PluginOp, PluginVal};
 use wasmer::{Engine, Exports, FunctionEnv, Store};
 use wasmer_compiler_singlepass::Singlepass;
 
@@ -46,13 +46,13 @@ impl DerefMut for PluginArray {
 
 impl PluginArray {
     /// Returns `true` iif one of the plugins provides an implementation for the requested `po`.
-    fn provides(&self, po: &ProtoOp, anchor: Anchor) -> bool {
+    fn provides(&self, po: &PluginOp, anchor: Anchor) -> bool {
         self.iter().any(|p| p.get_func(po, anchor).is_some())
     }
 
     /// Returns the first plugin that provides an implementation for `po` with the implementing
     /// function, or `None` if there is not.
-    fn get_first_plugin(&self, po: &ProtoOp) -> Option<(&Plugin, &PluginFunction)> {
+    fn get_first_plugin(&self, po: &PluginOp) -> Option<(&Plugin, &PluginFunction)> {
         for p in self.iter() {
             if let Some(func) = p.get_func(po, Anchor::Replace) {
                 return Some((p, func));
@@ -164,7 +164,7 @@ impl PluginHandler {
         }
     }
 
-    pub fn provides(&self, po: &ProtoOp, anchor: Anchor) -> bool {
+    pub fn provides(&self, po: &PluginOp, anchor: Anchor) -> bool {
         self.plugins.provides(po, anchor)
     }
 
@@ -192,7 +192,7 @@ impl PluginHandler {
     fn call_internal(
         &self,
         pod: Option<&&ProtocolOperationDefault>,
-        po: &ProtoOp,
+        po: &PluginOp,
         params: &[PluginVal],
     ) -> Result<Box<[PluginVal]>, Error> {
         // PRE part
@@ -237,7 +237,7 @@ impl PluginHandler {
     }
 
     /// Invokes the protocol operation `po` and runs its anchors.
-    pub fn call(&self, po: &ProtoOp, params: &[PluginVal]) -> Result<Box<[PluginVal]>, Error> {
+    pub fn call(&self, po: &PluginOp, params: &[PluginVal]) -> Result<Box<[PluginVal]>, Error> {
         // trace!("Calling protocol operation {:?}", po);
 
         // TODO

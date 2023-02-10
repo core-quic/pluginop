@@ -1,4 +1,9 @@
-for i in $(ls -d */); do
+PLUGINS=$1
+if [ -z $PLUGINS ]; then
+	PLUGINS=$(ls -d */)
+fi 
+
+for i in $PLUGINS; do
 pushd $i
 cargo build --target wasm32-unknown-unknown --release
 echo $i
