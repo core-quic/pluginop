@@ -9,7 +9,7 @@ use pluginop::{
 };
 use pluginop_common::{
     quic::{self, ConnectionField, Frame, MaxDataFrame, QVal, RecoveryField},
-    PluginVal, ProtoOp,
+    PluginOp, PluginVal,
 };
 use unix_time::Instant;
 use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
@@ -80,7 +80,7 @@ impl ConnectionDummy {
         // if self.pc
         // TODO: pre/post.
         let ph = self.get_pluginizable_connection().get_ph();
-        let po = ProtoOp::ProcessFrame(0x10);
+        let po = PluginOp::ProcessFrame(0x10);
         if ph.provides(&po, pluginop_common::Anchor::Replace) {
             ph.call(
                 &po,
@@ -187,13 +187,13 @@ fn memory_allocation_bench() {
     let pcd_ptr = &pcd as *const _;
     let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
     assert!(ok);
-    let (po, a) = ProtoOp::from_name("check_data");
+    let (po, a) = PluginOp::from_name("check_data");
     assert!(pcd.get_ph().provides(&po, a));
     let ph = pcd.get_ph();
     let res = ph.call(&po, &[]);
     assert!(res.is_ok());
     assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
-    let (po2, a2) = ProtoOp::from_name("free_data");
+    let (po2, a2) = PluginOp::from_name("free_data");
     assert!(pcd.get_ph().provides(&po2, a2));
     let ph = pcd.get_ph();
     let _ = ph.call(&po2, &[]);
@@ -207,13 +207,13 @@ fn memory_allocation_bench() {
 }
 
 fn static_memory(pcd: &mut Box<dyn PluginizableConnection>) {
-    let (po, a) = ProtoOp::from_name("get_mult_value");
+    let (po, a) = PluginOp::from_name("get_mult_value");
     assert!(pcd.get_ph().provides(&po, a));
     let ph = pcd.get_ph();
     let res = ph.call(&po, &[]);
     assert!(res.is_ok());
     assert_eq!(*res.unwrap(), [PluginVal::I64(0)]);
-    let (po2, a2) = ProtoOp::from_name("set_values");
+    let (po2, a2) = PluginOp::from_name("set_values");
     assert!(pcd.get_ph().provides(&po2, a2));
     let ph = pcd.get_ph();
     let res = ph.call(&po2, &[(2 as i32).into(), (3 as i32).into()]);
@@ -231,7 +231,7 @@ fn static_memory(pcd: &mut Box<dyn PluginizableConnection>) {
 }
 
 fn input_outputs(pcd: &mut Box<dyn PluginizableConnection>) {
-    let (po, a) = ProtoOp::from_name("get_calc_value");
+    let (po, a) = PluginOp::from_name("get_calc_value");
     assert!(pcd.get_ph().provides(&po, a));
     let ph = pcd.get_ph();
     let res = ph.call(&po, &[]);
@@ -245,7 +245,7 @@ fn input_outputs(pcd: &mut Box<dyn PluginizableConnection>) {
             PluginVal::I32(0)
         ]
     );
-    let (po2, a2) = ProtoOp::from_name("set_values");
+    let (po2, a2) = PluginOp::from_name("set_values");
     assert!(pcd.get_ph().provides(&po2, a2));
     let ph = pcd.get_ph();
     let res = ph.call(&po2, &[(12 as i32).into(), (3 as i32).into()]);
@@ -281,7 +281,7 @@ fn input_outputs(pcd: &mut Box<dyn PluginizableConnection>) {
 }
 
 fn increase_max_data(pc: &mut Box<dyn PluginizableConnection>) {
-    let (po, a) = ProtoOp::from_name("process_frame_10");
+    let (po, a) = PluginOp::from_name("process_frame_10");
     assert!(pc.get_ph().provides(&po, a));
     // Reset to same state.
     let pcd = pc
@@ -317,7 +317,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let pcd_ptr = &pcd as *const _;
     let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
     assert!(ok);
-    let (po, a) = ProtoOp::from_name("simple_call");
+    let (po, a) = PluginOp::from_name("simple_call");
     assert!(pcd.get_ph().provides(&po, a));
     let ph = pcd.get_ph();
     c.bench_function("run and return", |b| b.iter(|| ph.call(&po, &[])));

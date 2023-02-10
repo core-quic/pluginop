@@ -4,7 +4,7 @@ use std::convert::TryInto;
 
 pub use pluginop_common::quic;
 use pluginop_common::APIResult;
-pub use pluginop_common::ProtoOp;
+pub use pluginop_common::PluginOp;
 use pluginop_common::WASMLen;
 use pluginop_common::WASMPtr;
 
@@ -307,7 +307,7 @@ impl PluginEnv {
 mod todo {
     use pluginop_common::{
         quic::{self, ConnectionId},
-        APIResult, PluginVal, ProtoOp, WASMLen, WASMPtr,
+        APIResult, PluginOp, PluginVal, WASMLen, WASMPtr,
     };
     use serde::{Deserialize, Serialize};
     use unix_time::Instant;
@@ -445,7 +445,7 @@ mod todo {
 
         /// Calls the protocol operation `po` with the provided arguments.
         fn call_protoop(
-            po: ProtoOp,
+            po: PluginOp,
             args: Vec<PluginVal>,
             inputs: Vec<PluginVal>,
         ) -> Vec<PluginVal> {

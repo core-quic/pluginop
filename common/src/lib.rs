@@ -31,7 +31,7 @@ pub enum ConversionError {
 
 // FIXME: move these protoops in their respective protocols.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, PartialOrd)]
-pub enum ProtoOp {
+pub enum PluginOp {
     Init,
 
     // These derive from quic-invariants, from version.
@@ -86,9 +86,9 @@ fn extract_po_param(name: &str) -> Result<u64, ParseIntError> {
     u64::from_str_radix(end_num, 16)
 }
 
-impl ProtoOp {
+impl PluginOp {
     // FIXME find a more idiomatic way
-    pub fn from_name(name: &str) -> (ProtoOp, Anchor) {
+    pub fn from_name(name: &str) -> (PluginOp, Anchor) {
         let (name, anchor) = if let Some(po_name) = name.strip_prefix("pre_") {
             (po_name, Anchor::Pre)
         } else if let Some(po_name) = name.strip_prefix("post_") {
@@ -98,16 +98,16 @@ impl ProtoOp {
         };
 
         if name == "init" {
-            (ProtoOp::Init, anchor)
+            (PluginOp::Init, anchor)
         } else if name.starts_with("decode_transport_parameter_") {
             match extract_po_param(name) {
-                Ok(frame_type) => (ProtoOp::DecodeTransportParameter(frame_type), anchor),
+                Ok(frame_type) => (PluginOp::DecodeTransportParameter(frame_type), anchor),
                 Err(_) => panic!("Invalid protocol operation name"),
             }
         } else if name.starts_with("process_long_header_") {
             match extract_po_param(name) {
                 Ok(version) => match u32::try_from(version) {
-                    Ok(version) => (ProtoOp::ProcessLongHeader(version), anchor),
+                    Ok(version) => (PluginOp::ProcessLongHeader(version), anchor),
                     Err(_) => panic!("Invalid protocol operation name"),
                 },
                 Err(_) => panic!("Invalid protocol operation name"),
@@ -115,84 +115,84 @@ impl ProtoOp {
         } else if name.starts_with("process_short_header_") {
             match extract_po_param(name) {
                 Ok(version) => match u32::try_from(version) {
-                    Ok(version) => (ProtoOp::ProcessShortHeader(version), anchor),
+                    Ok(version) => (PluginOp::ProcessShortHeader(version), anchor),
                     Err(_) => panic!("Invalid protocol operation name"),
                 },
                 Err(_) => panic!("Invalid protocol operation name"),
             }
         } else if name == "process_version_negotiation" {
-            (ProtoOp::ProcessVersionNegotiation, anchor)
+            (PluginOp::ProcessVersionNegotiation, anchor)
         } else if name.starts_with("write_transport_parameter_") {
             match extract_po_param(name) {
-                Ok(frame_type) => (ProtoOp::WriteTransportParameter(frame_type), anchor),
+                Ok(frame_type) => (PluginOp::WriteTransportParameter(frame_type), anchor),
                 Err(_) => panic!("Invalid protocol operation name"),
             }
         } else if name.starts_with("log_frame_") {
             match extract_po_param(name) {
-                Ok(frame_type) => (ProtoOp::LogFrame(frame_type), anchor),
+                Ok(frame_type) => (PluginOp::LogFrame(frame_type), anchor),
                 Err(_) => panic!("Invalid protocol operation name"),
             }
         } else if name.starts_with("notify_frame_") {
             match extract_po_param(name) {
-                Ok(frame_type) => (ProtoOp::NotifyFrame(frame_type), anchor),
+                Ok(frame_type) => (PluginOp::NotifyFrame(frame_type), anchor),
                 Err(_) => panic!("Invalid protocol operation name"),
             }
         } else if name.starts_with("on_frame_reserved_") {
             match extract_po_param(name) {
-                Ok(frame_type) => (ProtoOp::OnFrameReserved(frame_type), anchor),
+                Ok(frame_type) => (PluginOp::OnFrameReserved(frame_type), anchor),
                 Err(_) => panic!("Invalid protocol operation name"),
             }
         } else if name.starts_with("parse_frame_") {
             match extract_po_param(name) {
-                Ok(frame_type) => (ProtoOp::ParseFrame(frame_type), anchor),
+                Ok(frame_type) => (PluginOp::ParseFrame(frame_type), anchor),
                 Err(_) => panic!("Invalid protocol operation name"),
             }
         } else if name.starts_with("prepare_frame_") {
             match extract_po_param(name) {
-                Ok(frame_type) => (ProtoOp::PrepareFrame(frame_type), anchor),
+                Ok(frame_type) => (PluginOp::PrepareFrame(frame_type), anchor),
                 Err(_) => panic!("Invalid protocol operation name"),
             }
         } else if name.starts_with("process_frame_") {
             match extract_po_param(name) {
-                Ok(frame_type) => (ProtoOp::ProcessFrame(frame_type), anchor),
+                Ok(frame_type) => (PluginOp::ProcessFrame(frame_type), anchor),
                 Err(_) => panic!("Invalid protocol operation name"),
             }
         } else if name.starts_with("should_send_frame_") {
             match extract_po_param(name) {
-                Ok(frame_type) => (ProtoOp::ShouldSendFrame(frame_type), anchor),
+                Ok(frame_type) => (PluginOp::ShouldSendFrame(frame_type), anchor),
                 Err(_) => panic!("Invalid protocol operation name"),
             }
         } else if name.starts_with("wire_len_") {
             match extract_po_param(name) {
-                Ok(frame_type) => (ProtoOp::WireLen(frame_type), anchor),
+                Ok(frame_type) => (PluginOp::WireLen(frame_type), anchor),
                 Err(e) => panic!("Invalid protocol operation name: {e}"),
             }
         } else if name.starts_with("write_frame_") {
             match extract_po_param(name) {
-                Ok(frame_type) => (ProtoOp::WriteFrame(frame_type), anchor),
+                Ok(frame_type) => (PluginOp::WriteFrame(frame_type), anchor),
                 Err(e) => panic!("Invalid protocol operation name: {e}"),
             }
         } else if name.starts_with("plugin_control_") {
             match extract_po_param(name) {
-                Ok(val) => (ProtoOp::PluginControl(val), anchor),
+                Ok(val) => (PluginOp::PluginControl(val), anchor),
                 Err(e) => panic!("Invalid protocol operation name: {e}"),
             }
         } else if name == "get_packet_to_send" {
-            (ProtoOp::GetPacketToSend, anchor)
+            (PluginOp::GetPacketToSend, anchor)
         } else if name == "decrypt_packet" {
-            (ProtoOp::DecryptPacket, anchor)
+            (PluginOp::DecryptPacket, anchor)
         } else if name == "on_packet_processed" {
-            (ProtoOp::OnPacketProcessed, anchor)
+            (PluginOp::OnPacketProcessed, anchor)
         } else if name == "on_packet_sent" {
-            (ProtoOp::OnPacketSent, anchor)
+            (PluginOp::OnPacketSent, anchor)
         } else if name == "set_loss_detection_timer" {
-            (ProtoOp::SetLossDetectionTimer, anchor)
+            (PluginOp::SetLossDetectionTimer, anchor)
         } else if name == "update_rtt" {
-            (ProtoOp::UpdateRtt, anchor)
+            (PluginOp::UpdateRtt, anchor)
         } else {
             let mut name_array = [0; 32];
             name_array[..name.len()].copy_from_slice(name.as_bytes());
-            (ProtoOp::Other(name_array), anchor)
+            (PluginOp::Other(name_array), anchor)
         }
     }
 }
