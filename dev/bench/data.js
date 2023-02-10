@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1674580630074,
+  "lastUpdate": 1676024246907,
   "repoUrl": "https://github.com/qdeconinck/pluginop",
   "entries": {
     "Pluginop benchmarks": [
@@ -353,6 +353,66 @@ window.BENCHMARK_DATA = {
             "name": "increase-max-data",
             "value": 4557,
             "range": "± 208",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0bf9af0b0a371faa22f3c3e5788bb9b352eae731",
+          "message": "Merge pull request #14 from qdeconinck/first-pluginop\n\nfirst version working with a hardcoded plugin operation",
+          "timestamp": "2023-02-10T11:10:38+01:00",
+          "tree_id": "b5c2fd59c9a352df5d10f1bc4174ac5a3da6dd4a",
+          "url": "https://github.com/qdeconinck/pluginop/commit/0bf9af0b0a371faa22f3c3e5788bb9b352eae731"
+        },
+        "date": 1676024245583,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "run and return",
+            "value": 267,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "memory allocation",
+            "value": 9321979,
+            "range": "± 1678325",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "static memory",
+            "value": 4842,
+            "range": "± 34",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inputs support",
+            "value": 5247,
+            "range": "± 38",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "input outputs",
+            "value": 6533,
+            "range": "± 19",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "increase-max-data",
+            "value": 4311,
+            "range": "± 33",
             "unit": "ns/iter"
           }
         ]
