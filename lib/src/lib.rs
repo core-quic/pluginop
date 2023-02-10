@@ -1,5 +1,13 @@
+use std::{
+    any::Any,
+    ops::{Deref, DerefMut},
+};
+
+use api::ConnectionToPlugin;
 use handler::PluginHandler;
-use pluginop_common::{PluginInputType, PluginOutputType, ProtoOp};
+use pluginop_common::{quic, PluginInputType, PluginOutputType, ProtoOp};
+use rawptr::RawMutPtr;
+use unix_time::Instant;
 use wasmer::{RuntimeError, TypedFunction};
 
 pub type PluginFunction = TypedFunction<PluginInputType, PluginOutputType>;
@@ -11,11 +19,40 @@ pub struct POCode {
     post: Option<PluginFunction>,
 }
 
-pub trait PluginizableConnection: Sized + Send + 'static {
-    fn get_conn(&self) -> &dyn api::ConnectionToPlugin<Self>;
-    fn get_conn_mut(&mut self) -> &mut dyn api::ConnectionToPlugin<Self>;
-    fn get_ph(&self) -> &PluginHandler<Self>;
-    fn get_ph_mut(&mut self) -> &mut PluginHandler<Self>;
+pub trait PluginizableConnection: std::fmt::Debug + Send + 'static {
+    fn get_conn(&self) -> &dyn api::ConnectionToPlugin;
+    fn get_conn_mut(&mut self) -> &mut dyn api::ConnectionToPlugin;
+    fn get_ph(&self) -> &PluginHandler;
+    fn get_ph_mut(&mut self) -> &mut PluginHandler;
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+#[derive(Debug)]
+pub struct ParentReferencer<T> {
+    inner: RawMutPtr<T>,
+}
+
+impl<T> ParentReferencer<T> {
+    pub fn new(v: *mut T) -> ParentReferencer<T> {
+        Self {
+            inner: RawMutPtr::new(v),
+        }
+    }
+}
+
+impl<T> Deref for ParentReferencer<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &**self.inner }
+    }
+}
+
+impl<T> DerefMut for ParentReferencer<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut **self.inner }
+    }
 }
 
 /// An error that may happen during the operations of this library.
@@ -27,14 +64,28 @@ pub enum Error {
     OperationError(i64),
 }
 
+pub enum ProtoOpFunc {
+    ProcessFrame(
+        fn(
+            &mut dyn ConnectionToPlugin,
+            quic::Frame,
+            &quic::Header,
+            quic::RcvInfo,
+            epoch: u64,
+            now: Instant,
+        ),
+    ),
+}
+
 #[cfg(test)]
 mod tests {
     use std::marker::PhantomPinned;
 
     use pluginop_common::{
-        quic::{ConnectionField, Frame, MaxDataFrame, QVal, RecoveryField},
+        quic::{self, ConnectionField, Frame, MaxDataFrame, QVal, RecoveryField},
         PluginVal,
     };
+    use unix_time::Instant;
     use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
 
     use crate::{api::CTPError, plugin::Env};
@@ -44,10 +95,11 @@ mod tests {
     /// Dummy object
     #[derive(Debug)]
     struct ConnectionDummy {
+        pc: Option<ParentReferencer<Box<dyn PluginizableConnection>>>,
         max_tx_data: u64,
     }
 
-    impl api::ConnectionToPlugin<'_, PluginizableConnectionDummy> for ConnectionDummy {
+    impl api::ConnectionToPlugin for ConnectionDummy {
         fn get_recovery(&self, _: &mut [u8], _: RecoveryField) -> bincode::Result<()> {
             todo!()
         }
@@ -75,43 +127,116 @@ mod tests {
             };
             Ok(())
         }
+
+        fn set_pluginizable_connection(&mut self, pc: *mut Box<dyn PluginizableConnection>) {
+            self.pc = Some(ParentReferencer::new(pc));
+        }
+
+        fn get_pluginizable_connection(&mut self) -> &mut Box<dyn PluginizableConnection> {
+            &mut *self.pc.as_mut().unwrap()
+        }
+    }
+
+    impl ConnectionDummy {
+        fn process_frame_default(&mut self, f: quic::Frame) {
+            match f {
+                Frame::MaxData(mdf) => {
+                    // Voluntary buggy implementation.
+                    self.max_tx_data = mdf.maximum_data;
+                }
+                _ => todo!(),
+            }
+        }
+
+        fn process_frame(
+            &mut self,
+            f: quic::Frame,
+            hdr: &quic::Header,
+            rcv_info: quic::RcvInfo,
+            epoch: u64,
+            now: Instant,
+        ) {
+            // TODO: define right expected signature for the function.
+            // if self.pc
+            // TODO: pre/post.
+            let ph = self.get_pluginizable_connection().get_ph();
+            let po = ProtoOp::ProcessFrame(0x10);
+            if ph.provides(&po, pluginop_common::Anchor::Replace) {
+                ph.call(
+                    &po,
+                    &[
+                        f.into(),
+                        hdr.clone().into(),
+                        rcv_info.into(),
+                        epoch.into(),
+                        now.into(),
+                    ],
+                );
+            } else {
+                self.process_frame_default(f)
+            }
+        }
+
+        pub fn recv_frame(&mut self, f: quic::Frame) {
+            // Fake receive process.
+            let hdr = quic::Header {
+                first: 0,
+                version: None,
+                destination_cid: 0,
+                source_cid: None,
+                supported_versions: None,
+                ext: None,
+            };
+            let rcv_info = quic::RcvInfo {
+                from: "0.0.0.0:1234".parse().unwrap(),
+                to: "0.0.0.0:4321".parse().unwrap(),
+            };
+            let epoch = 2;
+            let now = Instant::now();
+            self.process_frame(f, &hdr, rcv_info, epoch, now);
+        }
     }
 
     #[derive(Debug)]
     struct PluginizableConnectionDummy {
-        ph: PluginHandler<PluginizableConnectionDummy>,
+        ph: PluginHandler,
         conn: Box<ConnectionDummy>,
         _pin: PhantomPinned,
     }
 
     impl PluginizableConnection for PluginizableConnectionDummy {
-        fn get_conn(&self) -> &dyn api::ConnectionToPlugin<Self> {
+        fn get_conn(&self) -> &dyn api::ConnectionToPlugin {
             &*self.conn
         }
 
-        fn get_conn_mut(&mut self) -> &mut dyn api::ConnectionToPlugin<Self> {
+        fn get_conn_mut(&mut self) -> &mut dyn api::ConnectionToPlugin {
             // SAFETY: only valid as long as we are single-thread.
             &mut *self.conn
         }
 
-        fn get_ph(&self) -> &PluginHandler<PluginizableConnectionDummy> {
+        fn get_ph(&self) -> &PluginHandler {
             &self.ph
         }
 
-        fn get_ph_mut(&mut self) -> &mut PluginHandler<Self> {
+        fn get_ph_mut(&mut self) -> &mut PluginHandler {
             // SAFETY: only valid as loing as we are single-thread.
             &mut self.ph
         }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
     }
 
-    fn add_one<P: PluginizableConnection>(_: FunctionEnvMut<Env<P>>, x: u64) -> u64 {
+    fn add_one(_: FunctionEnvMut<Env>, x: u64) -> u64 {
         x + 1
     }
 
-    fn exports_func_external_test<P: PluginizableConnection>(
-        store: &mut Store,
-        env: &FunctionEnv<Env<P>>,
-    ) -> Exports {
+    fn exports_func_external_test(store: &mut Store, env: &FunctionEnv<Env>) -> Exports {
         let mut exports = Exports::new();
         exports.insert("add_one", Function::new_typed_with_env(store, env, add_one));
         exports
@@ -119,13 +244,20 @@ mod tests {
 
     impl PluginizableConnectionDummy {
         fn new(
-            exports_func: fn(&mut Store, &FunctionEnv<Env<Self>>) -> Exports,
-        ) -> Box<PluginizableConnectionDummy> {
+            exports_func: fn(&mut Store, &FunctionEnv<Env>) -> Exports,
+        ) -> Box<dyn PluginizableConnection> {
             Box::new(PluginizableConnectionDummy {
                 ph: PluginHandler::new(exports_func),
-                conn: Box::new(ConnectionDummy { max_tx_data: 2000 }),
+                conn: Box::new(ConnectionDummy {
+                    pc: None,
+                    max_tx_data: 2000,
+                }),
                 _pin: PhantomPinned,
             })
+        }
+
+        fn recv_frame(&mut self, f: quic::Frame) {
+            self.conn.recv_frame(f)
         }
     }
 
@@ -133,7 +265,7 @@ mod tests {
     fn simple_wasm() {
         let mut pcd = PluginizableConnectionDummy::new(exports_func_external_test);
         let path = "../tests/simple-wasm/simple_wasm.wasm".to_string();
-        let pcd_ptr = &pcd as *const _;
+        let pcd_ptr = &pcd as *const _ as *const _;
         let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
         assert!(ok);
         let (po, a) = ProtoOp::from_name("simple_call");
@@ -148,7 +280,7 @@ mod tests {
     fn memory_allocation() {
         let mut pcd = PluginizableConnectionDummy::new(exports_func_external_test);
         let path = "../tests/memory-allocation/memory_allocation.wasm".to_string();
-        let pcd_ptr = &pcd as *const _;
+        let pcd_ptr = &pcd as *const _ as *const _;
         let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
         assert!(ok);
         let (po, a) = ProtoOp::from_name("check_data");
@@ -173,7 +305,7 @@ mod tests {
     fn memory_run(path: &str) {
         let mut pcd = PluginizableConnectionDummy::new(exports_func_external_test);
         let path = path.to_string();
-        let pcd_ptr = &pcd as *const _;
+        let pcd_ptr = &pcd as *const _ as *const _;
         let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
         assert!(ok);
         let (po, a) = ProtoOp::from_name("get_mult_value");
@@ -215,7 +347,7 @@ mod tests {
     fn input_outputs() {
         let mut pcd = PluginizableConnectionDummy::new(exports_func_external_test);
         let path = "../tests/input-outputs/input_outputs.wasm".to_string();
-        let pcd_ptr = &pcd as *const _;
+        let pcd_ptr = &pcd as *const _ as *const _;
         let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
         assert!(ok);
         let (po, a) = ProtoOp::from_name("get_calc_value");
@@ -269,19 +401,23 @@ mod tests {
 
     #[test]
     fn increase_max_data() {
-        let mut pcd = PluginizableConnectionDummy::new(exports_func_external_test);
+        let mut pc = PluginizableConnectionDummy::new(exports_func_external_test);
         let path = "../tests/increase-max-data/increase_max_data.wasm".to_string();
-        let pcd_ptr = &pcd as *const _;
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+        let pc_ptr = &pc as *const _;
+        let ok = pc.get_ph_mut().insert_plugin(&path.into(), pc_ptr);
         assert!(ok);
         let (po, a) = ProtoOp::from_name("process_frame_10");
-        assert!(pcd.get_ph().provides(&po, a));
+        assert!(pc.get_ph().provides(&po, a));
+        let pcd = pc
+            .as_any()
+            .downcast_ref::<PluginizableConnectionDummy>()
+            .unwrap();
         let old_value = pcd.conn.max_tx_data;
         let new_value = old_value - 1000;
         let md_frame = MaxDataFrame {
             maximum_data: new_value,
         };
-        let ph = pcd.get_ph();
+        let ph = pc.get_ph();
         let res = ph.call(&po, &[QVal::Frame(Frame::MaxData(md_frame)).into()]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), []);
@@ -290,11 +426,40 @@ mod tests {
         let md_frame = MaxDataFrame {
             maximum_data: new_value,
         };
-        let ph = pcd.get_ph();
+        let ph = pc.get_ph();
         let res = ph.call(&po, &[QVal::Frame(Frame::MaxData(md_frame)).into()]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), []);
         assert_eq!(pcd.conn.max_tx_data, new_value);
+    }
+
+    #[test]
+    fn first_pluginop() {
+        let mut pc = PluginizableConnectionDummy::new(exports_func_external_test);
+        let pc_ptr = &mut pc as *mut _;
+        // Default implementation is buggy.
+        let pcd = pc
+            .as_any_mut()
+            .downcast_mut::<PluginizableConnectionDummy>()
+            .unwrap();
+        pcd.get_conn_mut().set_pluginizable_connection(pc_ptr);
+        pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 4000 }));
+        assert_eq!(pcd.conn.max_tx_data, 4000);
+        pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 2000 }));
+        assert_eq!(pcd.conn.max_tx_data, 2000);
+        // Fix this with the plugin.
+        let path = "../tests/increase-max-data/increase_max_data.wasm".to_string();
+        let pc_ptr = &pc as *const _;
+        let ok = pc.get_ph_mut().insert_plugin(&path.into(), pc_ptr);
+        assert!(ok);
+        let pcd = pc
+            .as_any_mut()
+            .downcast_mut::<PluginizableConnectionDummy>()
+            .unwrap();
+        pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 4000 }));
+        assert_eq!(pcd.conn.max_tx_data, 4000);
+        pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 2000 }));
+        assert_eq!(pcd.conn.max_tx_data, 4000);
     }
 }
 

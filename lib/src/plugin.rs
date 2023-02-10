@@ -16,7 +16,7 @@ use wasmer::{FunctionEnv, Imports, Instance, Module, Store};
 use crate::{
     handler::{Permission, PluginHandler},
     rawptr::RawMutPtr,
-    Error, POCode, PluginFunction, PluginizableConnection,
+    Error, POCode, PluginFunction,
 };
 
 /// An array of plugin-compatible values.
@@ -41,9 +41,9 @@ impl DerefMut for PluginValArray {
 }
 
 #[derive(Debug)]
-pub struct Env<P: PluginizableConnection> {
+pub struct Env {
     /// The underlying plugin handler holding the plugin running this environment.
-    ph: RawMutPtr<PluginHandler<P>>,
+    ph: RawMutPtr<PluginHandler>,
     /// The (weak) reference to the instance of the plugin. The value is set when
     instance: Weak<Pin<Box<Instance>>>,
     /// The set of internal field permissions granted to the plugin.
@@ -60,7 +60,7 @@ pub struct Env<P: PluginizableConnection> {
     pub opaque_values: Pin<Box<FnvHashMap<u64, u32>>>,
 }
 
-pub(crate) fn create_env<P: PluginizableConnection>(ph: RawMutPtr<PluginHandler<P>>) -> Env<P> {
+pub(crate) fn create_env(ph: RawMutPtr<PluginHandler>) -> Env {
     Env {
         ph,
         instance: Weak::new(),
@@ -72,7 +72,7 @@ pub(crate) fn create_env<P: PluginizableConnection>(ph: RawMutPtr<PluginHandler<
     }
 }
 
-impl<P: PluginizableConnection> Env<P> {
+impl Env {
     fn sanitize(&mut self) {
         // Empty the inputs.
         self.inputs.clear();
@@ -84,7 +84,7 @@ impl<P: PluginizableConnection> Env<P> {
         self.instance.upgrade()
     }
 
-    pub fn get_ph(&mut self) -> Option<&mut PluginHandler<P>> {
+    pub fn get_ph(&mut self) -> Option<&mut PluginHandler> {
         if self.ph.is_null() {
             None
         } else {
@@ -97,23 +97,23 @@ impl<P: PluginizableConnection> Env<P> {
 
 /// Structure holding the state of an inserted plugin. Because all the useful state is hold in the
 /// `Env` structure, this structure does not need to be public anymore.
-pub(crate) struct Plugin<P: PluginizableConnection> {
+pub(crate) struct Plugin {
     /// The actual WASM instance.
     instance: Arc<Pin<Box<Instance>>>,
     // The environment accessible to plugins.
-    env: FunctionEnv<Env<P>>,
+    env: FunctionEnv<Env>,
     /// A hash table to the functions contained in the instance.
     pocodes: Pin<Box<FnvHashMap<ProtoOp, POCode>>>,
     /// Opaque value provided as argument to the plugin.
     plugin_state: u32,
 }
 
-impl<P: PluginizableConnection> Plugin<P> {
+impl Plugin {
     /// Creates a new `Plugin` instance.
     pub fn new(
         plugin_fname: &PathBuf,
         store: &mut Store,
-        env: FunctionEnv<Env<P>>,
+        env: FunctionEnv<Env>,
         imports: &Imports,
     ) -> Option<Self> {
         match std::fs::read(plugin_fname) {
@@ -142,7 +142,7 @@ impl<P: PluginizableConnection> Plugin<P> {
                         permissions.insert(Permission::WriteBuffer);
                         permissions.insert(Permission::ReadBuffer);
 
-                        let pocodes = Plugin::<P>::get_pocodes(&instance, store);
+                        let pocodes = Plugin::get_pocodes(&instance, store);
 
                         return Some(Plugin {
                             instance: Arc::new(Box::pin(instance)),

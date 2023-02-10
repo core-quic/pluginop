@@ -15,6 +15,7 @@ pluginop-common = { path = "../common" }
 bincode = "1"
 fnv = "1"
 getrandom = "0.2"
+unix-time = "0.1"
 
 [dev-dependencies]
 criterion = "0.4"
