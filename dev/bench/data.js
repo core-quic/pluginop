@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1676044610273,
+  "lastUpdate": 1676281773650,
   "repoUrl": "https://github.com/qdeconinck/pluginop",
   "entries": {
     "Pluginop benchmarks": [
@@ -473,6 +473,78 @@ window.BENCHMARK_DATA = {
             "name": "increase-max-data",
             "value": 4489,
             "range": "± 192",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "24367f9941f15d3915579a5706d2a1d8d36b96f5",
+          "message": "Merge pull request #17 from qdeconinck/refactor-test-mock\n\nrefactoring: move mocking code in its own sub-crate",
+          "timestamp": "2023-02-13T10:41:29+01:00",
+          "tree_id": "769ea030a16091f92b707b8e396741f128d9c4b7",
+          "url": "https://github.com/qdeconinck/pluginop/commit/24367f9941f15d3915579a5706d2a1d8d36b96f5"
+        },
+        "date": 1676281771862,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "run and return",
+            "value": 323,
+            "range": "± 19",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "memory allocation",
+            "value": 7186488,
+            "range": "± 645872",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "static memory",
+            "value": 5153,
+            "range": "± 136",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inputs support",
+            "value": 5762,
+            "range": "± 161",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "input outputs",
+            "value": 6979,
+            "range": "± 270",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "increase-max-data",
+            "value": 4359,
+            "range": "± 102",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first pluginop",
+            "value": 12428403,
+            "range": "± 443506",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "macro simple",
+            "value": 6169844,
+            "range": "± 255286",
             "unit": "ns/iter"
           }
         ]
