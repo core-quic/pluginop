@@ -78,8 +78,9 @@ pub fn pluginop(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         #fn_vis fn #fn_name(#fn_inputs) #fn_output {
+            use pluginop::api::ConnectionToPlugin;
             let ph = self.get_pluginizable_connection().get_ph();
-            if ph.provides(& #po, pluginop_common::Anchor::Replace) {
+            if ph.provides(& #po, pluginop::common::Anchor::Replace) {
                 let _res = ph.call(
                     & #po,
                     &[
@@ -166,8 +167,9 @@ pub fn pluginop_param(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         #fn_vis fn #fn_name(#fn_inputs) #fn_output {
+            use pluginop::api::ConnectionToPlugin;
             let ph = self.get_pluginizable_connection().get_ph();
-            if ph.provides(& #po(#param), pluginop_common::Anchor::Replace) {
+            if ph.provides(& #po(#param), pluginop::common::Anchor::Replace) {
                 let _res = ph.call(
                     & #po(#param),
                     &[

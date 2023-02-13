@@ -1,5 +1,5 @@
 [workspace]
-members = [ "common", "lib", "macro", "wasm" ]
+members = [ "common", "lib", "macro", "mock", "wasm" ]
 exclude =  [ "tests" ]
 resolver = "2" # https://github.com/wasmerio/wasmer/issues/3377
 
