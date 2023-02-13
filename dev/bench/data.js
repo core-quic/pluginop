@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1676281773650,
+  "lastUpdate": 1676284739618,
   "repoUrl": "https://github.com/qdeconinck/pluginop",
   "entries": {
     "Pluginop benchmarks": [
@@ -545,6 +545,78 @@ window.BENCHMARK_DATA = {
             "name": "macro simple",
             "value": 6169844,
             "range": "± 255286",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "48f8667b7820e3eb6267de48e96d9bffa1712748",
+          "message": "Merge pull request #18 from qdeconinck/pocodes-collection\n\nperf: by default, use a Vec to store plugin functions",
+          "timestamp": "2023-02-13T11:31:42+01:00",
+          "tree_id": "678402f40b0b3df9002a17753d77261be3542cf6",
+          "url": "https://github.com/qdeconinck/pluginop/commit/48f8667b7820e3eb6267de48e96d9bffa1712748"
+        },
+        "date": 1676284738520,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "run and return",
+            "value": 142,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "memory allocation",
+            "value": 6043602,
+            "range": "± 211601",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "static memory",
+            "value": 3907,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inputs support",
+            "value": 4271,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "input outputs",
+            "value": 5365,
+            "range": "± 56",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "increase-max-data",
+            "value": 3730,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first pluginop",
+            "value": 11143429,
+            "range": "± 458286",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "macro simple",
+            "value": 5652115,
+            "range": "± 161190",
             "unit": "ns/iter"
           }
         ]
