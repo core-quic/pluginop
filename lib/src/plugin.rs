@@ -95,6 +95,94 @@ impl Env {
     }
 }
 
+const KV_VEC_MAX_ELEMS: usize = 16;
+
+enum KeyValueCollectionInner<K, V> {
+    Vec(Vec<(K, V)>),
+    HashMap(FnvHashMap<K, V>),
+}
+
+impl<K, V> KeyValueCollectionInner<K, V>
+where
+    K: Eq + core::hash::Hash,
+{
+    fn is_vec(&self) -> bool {
+        matches!(self, KeyValueCollectionInner::Vec(_))
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            KeyValueCollectionInner::Vec(v) => v.len(),
+            KeyValueCollectionInner::HashMap(hm) => hm.len(),
+        }
+    }
+
+    fn get(&self, k: &K) -> Option<&V> {
+        match self {
+            KeyValueCollectionInner::Vec(v) => {
+                v.iter()
+                    .find_map(|(ek, ev)| if ek == k { Some(ev) } else { None })
+            }
+            KeyValueCollectionInner::HashMap(hm) => hm.get(k),
+        }
+    }
+
+    fn get_mut(&mut self, k: &K) -> Option<&mut V> {
+        match self {
+            KeyValueCollectionInner::Vec(v) => {
+                v.iter_mut()
+                    .find_map(|(ek, ev)| if ek == k { Some(ev) } else { None })
+            }
+            KeyValueCollectionInner::HashMap(hm) => hm.get_mut(k),
+        }
+    }
+
+    fn insert(&mut self, k: K, v: V) {
+        // FIXME: in Vec mode, we should ideally check that the element is not already there.
+        match self {
+            KeyValueCollectionInner::Vec(vec) => vec.push((k, v)),
+            KeyValueCollectionInner::HashMap(hm) => {
+                hm.insert(k, v);
+            }
+        }
+    }
+}
+
+struct KeyValueCollection<K, V> {
+    inner: KeyValueCollectionInner<K, V>,
+    capacity: usize,
+}
+
+impl<K, V> KeyValueCollection<K, V>
+where
+    K: Eq + core::hash::Hash,
+{
+    fn new(capacity: usize) -> Self {
+        let inner = if capacity > KV_VEC_MAX_ELEMS {
+            KeyValueCollectionInner::HashMap(FnvHashMap::default())
+        } else {
+            KeyValueCollectionInner::Vec(Vec::with_capacity(capacity))
+        };
+        Self { inner, capacity }
+    }
+
+    fn insert(&mut self, k: K, v: V) {
+        // We mostly care for the Vec variant, not for the HashMap.
+        if self.inner.is_vec() && self.inner.len() > self.capacity {
+            warn!("Added element will exceed original Vec capacity");
+        }
+        self.inner.insert(k, v)
+    }
+
+    fn get(&self, k: &K) -> Option<&V> {
+        self.inner.get(k)
+    }
+
+    fn get_mut(&mut self, k: &K) -> Option<&mut V> {
+        self.inner.get_mut(k)
+    }
+}
+
 /// Structure holding the state of an inserted plugin. Because all the useful state is hold in the
 /// `Env` structure, this structure does not need to be public anymore.
 pub(crate) struct Plugin {
@@ -102,8 +190,8 @@ pub(crate) struct Plugin {
     instance: Arc<Pin<Box<Instance>>>,
     // The environment accessible to plugins.
     env: FunctionEnv<Env>,
-    /// A hash table to the functions contained in the instance.
-    pocodes: Pin<Box<FnvHashMap<PluginOp, POCode>>>,
+    /// A collection holding the plugin functions contained in the instance.
+    pocodes: Pin<Box<KeyValueCollection<PluginOp, POCode>>>,
     /// Opaque value provided as argument to the plugin.
     plugin_state: u32,
 }
@@ -163,8 +251,9 @@ impl Plugin {
         None
     }
 
-    fn get_pocodes(instance: &Instance, store: &mut Store) -> FnvHashMap<PluginOp, POCode> {
-        let mut pocodes: FnvHashMap<PluginOp, POCode> = FnvHashMap::default();
+    fn get_pocodes(instance: &Instance, store: &mut Store) -> KeyValueCollection<PluginOp, POCode> {
+        let mut pocodes: KeyValueCollection<PluginOp, POCode> =
+            KeyValueCollection::new(KV_VEC_MAX_ELEMS);
 
         for (name, _) in instance.exports.iter() {
             if let Ok(func) = instance.exports.get_typed_function(store, name) {
