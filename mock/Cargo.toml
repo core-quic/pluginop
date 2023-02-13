@@ -1,0 +1,19 @@
+[package]
+name = "pluginop-mock"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pluginop = { path = "../lib" }
+bincode = "1"
+wasmer = "3"
+unix-time = "0.1"
+
+[dev-dependencies]
+criterion = "0.4"
+
+[[bench]]
+name = "benchmarks"
+harness = false
