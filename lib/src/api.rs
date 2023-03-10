@@ -30,7 +30,7 @@ pub trait ConnectionToPlugin: Send + Unpin {
     fn set_recovery(&mut self, field: RecoveryField, value: &[u8]);
 
     fn set_pluginizable_connection(&mut self, pc: *mut Box<dyn PluginizableConnection>);
-    fn get_pluginizable_connection(&mut self) -> &mut Box<dyn PluginizableConnection>;
+    fn get_pluginizable_connection(&mut self) -> Option<&mut Box<dyn PluginizableConnection>>;
 }
 
 // -------------------------------- API FUNCTIONS ----------------------------------

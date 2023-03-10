@@ -19,7 +19,7 @@ pub struct POCode {
     post: Option<PluginFunction>,
 }
 
-pub trait PluginizableConnection: std::fmt::Debug + Send + 'static {
+pub trait PluginizableConnection: Send + 'static {
     fn get_conn(&self) -> &dyn api::ConnectionToPlugin;
     fn get_conn_mut(&mut self) -> &mut dyn api::ConnectionToPlugin;
     fn get_ph(&self) -> &PluginHandler;
@@ -85,3 +85,6 @@ mod rawptr;
 // Reexport common and macro.
 pub use pluginop_common as common;
 pub use pluginop_macro;
+
+// Also need to expose structures to create exports.
+pub use wasmer::{Exports, FunctionEnv, Store};

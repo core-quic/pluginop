@@ -17,7 +17,6 @@ use unix_time::Instant;
 use wasmer::{Exports, FunctionEnv, Store};
 
 /// Dummy object
-#[derive(Debug)]
 pub struct ConnectionDummy {
     pc: Option<ParentReferencer<Box<dyn PluginizableConnection>>>,
     pub max_tx_data: u64,
@@ -56,8 +55,8 @@ impl api::ConnectionToPlugin for ConnectionDummy {
         self.pc = Some(ParentReferencer::new(pc));
     }
 
-    fn get_pluginizable_connection(&mut self) -> &mut Box<dyn PluginizableConnection> {
-        &mut *self.pc.as_mut().unwrap()
+    fn get_pluginizable_connection(&mut self) -> Option<&mut Box<dyn PluginizableConnection>> {
+        self.pc.as_deref_mut()
     }
 }
 
@@ -79,12 +78,16 @@ impl ConnectionDummy {
         _hdr: quic::Header,
         _rcv_info: quic::RcvInfo,
         _epoch: u64,
-        _now: Instant,
+        now: Instant,
     ) {
         match f {
             Frame::MaxData(mdf) => {
                 // Voluntary buggy implementation.
                 self.max_tx_data = mdf.maximum_data;
+            }
+            Frame::ACK(af) => {
+                let latest_rtt = Duration::from_millis(100);
+                self.update_rtt(latest_rtt, Duration::from_millis(af.ack_delay), now);
             }
             _ => todo!(),
         }
@@ -114,7 +117,6 @@ impl ConnectionDummy {
     }
 }
 
-#[derive(Debug)]
 pub struct PluginizableConnectionDummy {
     pub ph: PluginHandler,
     pub conn: Box<ConnectionDummy>,
@@ -136,7 +138,7 @@ impl PluginizableConnection for PluginizableConnectionDummy {
     }
 
     fn get_ph_mut(&mut self) -> &mut PluginHandler {
-        // SAFETY: only valid as loing as we are single-thread.
+        // SAFETY: only valid as long as we are single-thread.
         &mut self.ph
     }
 
