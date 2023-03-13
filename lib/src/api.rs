@@ -13,7 +13,9 @@ pub enum CTPError {
 
 /// A trait that needs to be implemented by the host implementation to provide
 /// plugins information from the host.
-pub trait ConnectionToPlugin: Sized + Send + Unpin + 'static {
+pub trait ConnectionToPlugin:
+    Sized + Send + Unpin + ToPluginizableConnection<Self> + 'static
+{
     /// Gets the related `ConnectionField` and writes it as a serialized value in `w`.
     /// It is up to the plugin to correctly handle the value and perform the serialization.
     fn get_connection(&self, field: ConnectionField, w: &mut [u8]) -> bincode::Result<()>;
@@ -28,9 +30,15 @@ pub trait ConnectionToPlugin: Sized + Send + Unpin + 'static {
     /// `value`. It is this function responsibility to correctly convert the
     /// input to the right type.
     fn set_recovery(&mut self, field: RecoveryField, value: &[u8]);
+}
 
-    fn set_pluginizable_connection(&mut self, pc: *mut PluginizableConnection<Self>);
-    fn get_pluginizable_connection(&mut self) -> Option<&mut PluginizableConnection<Self>>;
+/// A trait that must be implemented on structures that have pluginization features. This notably
+/// includes the connection itself, but also, e.g.,  the recovery structure.
+pub trait ToPluginizableConnection<CTP: ConnectionToPlugin> {
+    /// Sets the associated `PluginizableConnection`.
+    fn set_pluginizable_connection(&mut self, pc: *mut PluginizableConnection<CTP>);
+    /// Gets the associated `PluginizableConnection`.
+    fn get_pluginizable_connection(&mut self) -> Option<&mut PluginizableConnection<CTP>>;
 }
 
 // -------------------------------- API FUNCTIONS ----------------------------------

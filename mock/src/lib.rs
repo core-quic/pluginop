@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
-use pluginop::api::ConnectionToPlugin;
+use pluginop::api::{ConnectionToPlugin, ToPluginizableConnection};
 use pluginop::common::quic::{self, Frame};
 use pluginop::common::PluginOp;
 use pluginop::common::{
@@ -48,7 +48,9 @@ impl ConnectionToPlugin for ConnectionDummy {
         };
         Ok(())
     }
+}
 
+impl ToPluginizableConnection<ConnectionDummy> for ConnectionDummy {
     fn set_pluginizable_connection(&mut self, pc: *mut PluginizableConnection<Self>) {
         self.pc = Some(ParentReferencer::new(pc));
     }

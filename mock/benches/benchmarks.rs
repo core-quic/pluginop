@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use pluginop::{
-    api::ConnectionToPlugin,
+    api::ToPluginizableConnection,
     common::{
         quic::{Frame, MaxDataFrame, QVal},
         PluginOp, PluginVal,
