@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1676284739618,
+  "lastUpdate": 1678706512023,
   "repoUrl": "https://github.com/qdeconinck/pluginop",
   "entries": {
     "Pluginop benchmarks": [
@@ -617,6 +617,78 @@ window.BENCHMARK_DATA = {
             "name": "macro simple",
             "value": 5652115,
             "range": "± 161190",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a1025a25183f94c07c469f9a1d6d126275b7e511",
+          "message": "Merge pull request #19 from qdeconinck/generic\n\nmake PluginizableConnection a struct",
+          "timestamp": "2023-03-13T12:15:34+01:00",
+          "tree_id": "9584577f162543aeb0f54ca071c45823e77b1eb4",
+          "url": "https://github.com/qdeconinck/pluginop/commit/a1025a25183f94c07c469f9a1d6d126275b7e511"
+        },
+        "date": 1678706510616,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "run and return",
+            "value": 142,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "memory allocation",
+            "value": 6836835,
+            "range": "± 1712718",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "static memory",
+            "value": 4361,
+            "range": "± 51",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inputs support",
+            "value": 4694,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "input outputs",
+            "value": 5930,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "increase-max-data",
+            "value": 4318,
+            "range": "± 50",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first pluginop",
+            "value": 11967430,
+            "range": "± 221928",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "macro simple",
+            "value": 5758764,
+            "range": "± 168552",
             "unit": "ns/iter"
           }
         ]
