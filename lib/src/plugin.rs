@@ -14,6 +14,7 @@ use pluginop_common::{Anchor, PluginOp, PluginVal};
 use wasmer::{FunctionEnv, Imports, Instance, Module, Store};
 
 use crate::{
+    api::ConnectionToPlugin,
     handler::{Permission, PluginHandler},
     rawptr::RawMutPtr,
     Error, POCode, PluginFunction,
@@ -41,9 +42,9 @@ impl DerefMut for PluginValArray {
 }
 
 #[derive(Debug)]
-pub struct Env {
+pub struct Env<CTP: ConnectionToPlugin> {
     /// The underlying plugin handler holding the plugin running this environment.
-    ph: RawMutPtr<PluginHandler>,
+    ph: RawMutPtr<PluginHandler<CTP>>,
     /// The (weak) reference to the instance of the plugin. The value is set when
     instance: Weak<Pin<Box<Instance>>>,
     /// The set of internal field permissions granted to the plugin.
@@ -60,7 +61,7 @@ pub struct Env {
     pub opaque_values: Pin<Box<FnvHashMap<u64, u32>>>,
 }
 
-pub(crate) fn create_env(ph: RawMutPtr<PluginHandler>) -> Env {
+pub(crate) fn create_env<CTP: ConnectionToPlugin>(ph: RawMutPtr<PluginHandler<CTP>>) -> Env<CTP> {
     Env {
         ph,
         instance: Weak::new(),
@@ -72,7 +73,7 @@ pub(crate) fn create_env(ph: RawMutPtr<PluginHandler>) -> Env {
     }
 }
 
-impl Env {
+impl<CTP: ConnectionToPlugin> Env<CTP> {
     fn sanitize(&mut self) {
         // Empty the inputs.
         self.inputs.clear();
@@ -84,7 +85,7 @@ impl Env {
         self.instance.upgrade()
     }
 
-    pub fn get_ph(&mut self) -> Option<&mut PluginHandler> {
+    pub fn get_ph(&mut self) -> Option<&mut PluginHandler<CTP>> {
         if self.ph.is_null() {
             None
         } else {
@@ -185,23 +186,23 @@ where
 
 /// Structure holding the state of an inserted plugin. Because all the useful state is hold in the
 /// `Env` structure, this structure does not need to be public anymore.
-pub(crate) struct Plugin {
+pub(crate) struct Plugin<CTP: ConnectionToPlugin> {
     /// The actual WASM instance.
     instance: Arc<Pin<Box<Instance>>>,
     // The environment accessible to plugins.
-    env: FunctionEnv<Env>,
+    env: FunctionEnv<Env<CTP>>,
     /// A collection holding the plugin functions contained in the instance.
     pocodes: Pin<Box<KeyValueCollection<PluginOp, POCode>>>,
     /// Opaque value provided as argument to the plugin.
     plugin_state: u32,
 }
 
-impl Plugin {
+impl<CTP: ConnectionToPlugin> Plugin<CTP> {
     /// Creates a new `Plugin` instance.
     pub fn new(
         plugin_fname: &PathBuf,
         store: &mut Store,
-        env: FunctionEnv<Env>,
+        env: FunctionEnv<Env<CTP>>,
         imports: &Imports,
     ) -> Option<Self> {
         match std::fs::read(plugin_fname) {
@@ -230,7 +231,7 @@ impl Plugin {
                         permissions.insert(Permission::WriteBuffer);
                         permissions.insert(Permission::ReadBuffer);
 
-                        let pocodes = Plugin::get_pocodes(&instance, store);
+                        let pocodes = Plugin::<CTP>::get_pocodes(&instance, store);
 
                         return Some(Plugin {
                             instance: Arc::new(Box::pin(instance)),

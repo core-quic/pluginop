@@ -1,10 +1,11 @@
 use std::{
-    any::Any,
+    marker::PhantomPinned,
     ops::{Deref, DerefMut},
 };
 
 use api::ConnectionToPlugin;
 use handler::PluginHandler;
+use plugin::Env;
 use pluginop_common::{quic, PluginInputType, PluginOp, PluginOutputType};
 use rawptr::RawMutPtr;
 use unix_time::Instant;
@@ -19,13 +20,43 @@ pub struct POCode {
     post: Option<PluginFunction>,
 }
 
-pub trait PluginizableConnection: std::fmt::Debug + Send + 'static {
-    fn get_conn(&self) -> &dyn api::ConnectionToPlugin;
-    fn get_conn_mut(&mut self) -> &mut dyn api::ConnectionToPlugin;
-    fn get_ph(&self) -> &PluginHandler;
-    fn get_ph_mut(&mut self) -> &mut PluginHandler;
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
+pub struct PluginizableConnection<CTP: ConnectionToPlugin> {
+    pub ph: PluginHandler<CTP>,
+    pub conn: CTP,
+    _pin: PhantomPinned,
+}
+
+impl<CTP: ConnectionToPlugin> PluginizableConnection<CTP> {
+    fn new(exports_func: fn(&mut Store, &FunctionEnv<Env<CTP>>) -> Exports, conn: CTP) -> Self {
+        Self {
+            ph: PluginHandler::new(exports_func),
+            conn,
+            _pin: PhantomPinned,
+        }
+    }
+
+    pub fn new_pluginizable_connection(
+        exports_func: fn(&mut Store, &FunctionEnv<Env<CTP>>) -> Exports,
+        conn: CTP,
+    ) -> Box<PluginizableConnection<CTP>> {
+        Box::new(Self::new(exports_func, conn))
+    }
+
+    pub fn get_conn(&self) -> &CTP {
+        &self.conn
+    }
+
+    pub fn get_conn_mut(&mut self) -> &mut CTP {
+        &mut self.conn
+    }
+
+    pub fn get_ph(&self) -> &PluginHandler<CTP> {
+        &self.ph
+    }
+
+    pub fn get_ph_mut(&mut self) -> &mut PluginHandler<CTP> {
+        &mut self.ph
+    }
 }
 
 #[derive(Debug)]
@@ -64,17 +95,8 @@ pub enum Error {
     OperationError(i64),
 }
 
-pub enum ProtoOpFunc {
-    ProcessFrame(
-        fn(
-            &mut dyn ConnectionToPlugin,
-            quic::Frame,
-            &quic::Header,
-            quic::RcvInfo,
-            epoch: u64,
-            now: Instant,
-        ),
-    ),
+pub enum ProtoOpFunc<CTP: ConnectionToPlugin> {
+    ProcessFrame(fn(&mut CTP, quic::Frame, &quic::Header, quic::RcvInfo, epoch: u64, now: Instant)),
 }
 
 pub mod api;
@@ -85,3 +107,6 @@ mod rawptr;
 // Reexport common and macro.
 pub use pluginop_common as common;
 pub use pluginop_macro;
+
+// Also need to expose structures to create exports.
+pub use wasmer::{Exports, FunctionEnv, Store};
