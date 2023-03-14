@@ -3,13 +3,13 @@ use std::time::Duration;
 
 use pluginop::api::{ConnectionToPlugin, ToPluginizableConnection};
 use pluginop::common::quic::{self, Frame};
-use pluginop::common::PluginOp;
+use pluginop::common::{PluginOp};
 use pluginop::common::{
     quic::{ConnectionField, RecoveryField},
     PluginVal,
 };
 use pluginop::plugin::Env;
-use pluginop::pluginop_macro::{pluginop, pluginop_param};
+use pluginop::pluginop_macro::{pluginop, pluginop_param, pluginop_result};
 use pluginop::{api::CTPError, ParentReferencer, PluginizableConnection};
 use unix_time::Instant;
 use wasmer::{Exports, FunctionEnv, Store};
@@ -60,10 +60,34 @@ impl ToPluginizableConnection<ConnectionDummy> for ConnectionDummy {
     }
 }
 
+pub struct Error;
+
+pub enum MyResult<T> {
+    Ok(T),
+    Err(Error),
+}
+
+impl From<i64> for Error {
+    fn from(_: i64) -> Self {
+        Error
+    }
+}
+
+
 impl ConnectionDummy {
     #[pluginop(PluginOp::UpdateRtt)]
     fn update_rtt(&mut self, latest_rtt: Duration, _ack_delay: Duration, _now: Instant) {
         self.srtt = latest_rtt;
+    }
+
+    #[pluginop(PluginOp::Test)]
+    fn test1(&mut self, _latest_rtt: Duration) -> u64 {
+        42
+    }
+
+    #[pluginop_result(PluginOp::Test)]
+    fn test2(&mut self, _latest_rtt: Duration) -> Result<(), Error> {
+        Ok(())
     }
 
     pub fn recv_pkt(&mut self, latest_rtt: Duration, ack_delay: Duration, now: Instant) {

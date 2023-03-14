@@ -317,7 +317,7 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
         store: &mut Store,
         func: &PluginFunction,
         params: &[PluginVal],
-    ) -> Result<Box<[PluginVal]>, Error> {
+    ) -> Result<Vec<PluginVal>, Error> {
         let env_mut = self.env.as_mut(store);
         // Before launching any call, we should sanitize the running `env`.
         env_mut.sanitize();
@@ -328,7 +328,7 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
 
         // debug!("Calling PO with param {:?}", params);
         match func.call(store, self.plugin_state) {
-            Ok(res) if res == 0 => Ok((*self.env.as_ref(store).outputs).clone().into_boxed_slice()),
+            Ok(res) if res == 0 => Ok((*self.env.as_ref(store).outputs).clone()),
             Ok(err) => Err(Error::OperationError(err)),
             Err(re) => Err(Error::RuntimeError(re)),
         }

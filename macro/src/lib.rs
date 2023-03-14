@@ -2,7 +2,7 @@ use darling::FromMeta;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input, punctuated::Punctuated, AttributeArgs, FnArg, Ident, ItemFn, Pat, Path, Type,
+    parse_macro_input, punctuated::Punctuated, AttributeArgs, FnArg, Ident, ItemFn, Pat, Path, Type, ReturnType,
 };
 
 extern crate proc_macro;
@@ -30,36 +30,22 @@ fn extract_arg_idents_vec(fn_args: Vec<FnArg>) -> Vec<Pat> {
         .collect::<Vec<_>>()
 }
 
-#[proc_macro_attribute]
-pub fn pluginop(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let attrs = parse_macro_input!(attr as AttributeArgs);
-    let po = match &attrs[0] {
-        syn::NestedMeta::Meta(m) => match m {
-            syn::Meta::Path(po) => po,
-            syn::Meta::List(_) => todo!("meta list"),
-            syn::Meta::NameValue(_) => todo!("meta nv"),
-        },
-        syn::NestedMeta::Lit(_) => todo!("lit"),
-    };
-    let base_fn = parse_macro_input!(item as ItemFn);
-    let fn_args = extract_arg_idents(base_fn.sig.inputs.clone());
-
-    let fn_output = &base_fn.sig.output;
-    let fn_inputs = &base_fn.sig.inputs;
-    let mut fn_inputs_no_self = fn_inputs.clone();
-    fn_inputs_no_self.pop();
-    let fn_vis = &base_fn.vis;
-    let fn_name = &base_fn.sig.ident;
-    let fn_block = &base_fn.block;
-    let fn_name_internal = format_ident!("__{}__", fn_name);
-
-    let ret_block = match &base_fn.sig.output {
-        syn::ReturnType::Default => quote!({}),
+fn get_ret_block(fn_output_type: &ReturnType) -> proc_macro2::TokenStream {
+    match fn_output_type {
+        syn::ReturnType::Default => quote!({
+            if let Err(err) = res {
+                panic!("plugin execution error: {:?}", err);
+            }
+        }),
         syn::ReturnType::Type(_, t) => {
             if let Type::Tuple(tu) = *t.clone() {
                 let elems = tu.elems.into_iter();
                 quote! {
-                    let mut it = _res.iter_mut();
+                    let mut it = match res {
+                        Ok(r) => r.into_iter(),
+                        Err(Error::OperationError(e)) => todo!("operation error; should you use pluginop_result?"),
+                        Err(err) => panic!("plugin execution error: {:?}", err),
+                    };
                     (
                         #(
                             #elems :: try_from(it.next().unwrap()).unwrap(),
@@ -67,10 +53,65 @@ pub fn pluginop(attr: TokenStream, item: TokenStream) -> TokenStream {
                     )
                 }
             } else {
-                quote!({ _res.iter_mut().unwrap().try_into().unwrap() })
+                quote!(
+                    let mut it = match res {
+                        Ok(r) => r.into_iter(),
+                        Err(Error::OperationError(e)) => todo!("operation error; should you use pluginop_result?"),
+                        Err(err) => panic!("plugin execution error: {:?}", err),
+                    };
+                    { it.next().unwrap().try_into().unwrap() }
+                )
             }
         }
-    };
+    }
+}
+
+fn get_ret_result_block(fn_output_type: &ReturnType) -> proc_macro2::TokenStream {
+    match fn_output_type {
+        syn::ReturnType::Default => quote!({
+            if let Err(err) = res {
+                panic!("plugin execution error: {:?}", err);
+            }
+        }),
+        syn::ReturnType::Type(_, t) => {
+            if let Type::Tuple(tu) = *t.clone() {
+                let elems = tu.elems.into_iter();
+                quote! {
+                    let mut it = match res {
+                        Ok(r) => r.into_iter(),
+                        Err(Error::OperationError(e)) => return Err(e.into()),
+                        Err(err) => panic!("plugin execution error: {:?}", err),
+                    };
+                    Ok((
+                        #(
+                            #elems :: try_from(it.next().unwrap()).unwrap(),
+                        )*
+                    ))
+                }
+            } else {
+                quote!(
+                    let mut it = match res {
+                        Ok(r) => r.into_iter(),
+                        Err(Error::OperationError(e)) => return Err(e.into()),
+                        Err(err) => panic!("plugin execution error: {:?}", err),
+                    };
+                    { Ok(it.next().unwrap().try_into().unwrap()) }
+                )
+            }
+        }
+    }
+}
+
+fn get_out_block(base_fn: &ItemFn, po: &Path, ret_block: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    let fn_args = extract_arg_idents(base_fn.sig.inputs.clone());
+    let fn_inputs = &base_fn.sig.inputs;
+    let mut fn_inputs_no_self = fn_inputs.clone();
+    fn_inputs_no_self.pop();
+    let fn_vis = &base_fn.vis;
+    let fn_name = &base_fn.sig.ident;
+    let fn_block = &base_fn.block;
+    let fn_output = &base_fn.sig.output;
+    let fn_name_internal = format_ident!("__{}__", fn_name);
 
     quote! {
         fn #fn_name_internal(#fn_inputs) #fn_output {
@@ -79,14 +120,15 @@ pub fn pluginop(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         #fn_vis fn #fn_name(#fn_inputs) #fn_output {
             use pluginop::api::ToPluginizableConnection;
+            use pluginop::Error;
             let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph());
             if ph.map(|ph| ph.provides(& #po, pluginop::common::Anchor::Replace)).unwrap_or(false) {
-                let _res = ph.unwrap().call(
+                let res = ph.unwrap().call(
                     & #po,
                     &[
-                        #(#fn_args.into() ,)*
+                        #(#fn_args.clone().into() ,)*
                     ],
-                ).expect("call failed");
+                );
 
                 #ret_block
             } else {
@@ -94,30 +136,9 @@ pub fn pluginop(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     }
-    .into()
 }
 
-/// Arguments that can be passed through the `protoop` macro. See the
-/// documentation of the macro `protoop` for more details.
-#[derive(Debug, FromMeta)]
-struct MacroArgs {
-    po: Path,
-    param: Ident,
-}
-
-#[proc_macro_attribute]
-pub fn pluginop_param(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let attrs = parse_macro_input!(attr as AttributeArgs);
-    let attrs_args = match MacroArgs::from_list(&attrs) {
-        Ok(v) => v,
-        Err(e) => return TokenStream::from(e.write_errors()),
-    };
-
-    let po = attrs_args.po;
-    let param = attrs_args.param;
-
-    let base_fn = parse_macro_input!(item as ItemFn);
-
+fn get_out_param_block(param: Ident, base_fn: &ItemFn, po: &Path, ret_block: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     let fn_output = &base_fn.sig.output;
     let fn_inputs = &base_fn.sig.inputs;
     let fn_inputs_no_param: Vec<FnArg> = fn_inputs
@@ -142,25 +163,6 @@ pub fn pluginop_param(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_block = &base_fn.block;
     let fn_name_internal = format_ident!("__{}__", fn_name);
 
-    let ret_block = match &base_fn.sig.output {
-        syn::ReturnType::Default => quote!({}),
-        syn::ReturnType::Type(_, t) => {
-            if let Type::Tuple(tu) = *t.clone() {
-                let elems = tu.elems.into_iter();
-                quote! {
-                    let mut it = _res.iter_mut();
-                    (
-                        #(
-                            #elems :: try_from(it.next().unwrap()).unwrap(),
-                        )*
-                    )
-                }
-            } else {
-                quote!({ _res.iter_mut().unwrap().try_into().unwrap() })
-            }
-        }
-    };
-
     quote! {
         fn #fn_name_internal(#(#fn_inputs_no_param,)*) #fn_output {
             #fn_block
@@ -170,12 +172,12 @@ pub fn pluginop_param(attr: TokenStream, item: TokenStream) -> TokenStream {
             use pluginop::api::ToPluginizableConnection;
             let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph());
             if ph.map(|ph| ph.provides(& #po(#param), pluginop::common::Anchor::Replace)).unwrap_or(false) {
-                let _res = ph.unwrap().call(
+                let res = ph.unwrap().call(
                     & #po(#param),
                     &[
-                        #(#fn_args.into() ,)*
+                        #(#fn_args.clone().into() ,)*
                     ],
-                ).expect("call failed");
+                );
 
                 #ret_block
             } else {
@@ -183,5 +185,88 @@ pub fn pluginop_param(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     }
-    .into()
+}
+
+#[proc_macro_attribute]
+pub fn pluginop(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attrs = parse_macro_input!(attr as AttributeArgs);
+    let po = match &attrs[0] {
+        syn::NestedMeta::Meta(m) => match m {
+            syn::Meta::Path(po) => po,
+            syn::Meta::List(_) => todo!("meta list"),
+            syn::Meta::NameValue(_) => todo!("meta nv"),
+        },
+        syn::NestedMeta::Lit(_) => todo!("lit"),
+    };
+    let base_fn = parse_macro_input!(item as ItemFn);
+
+    let ret_block = get_ret_block(&base_fn.sig.output);
+    let out = get_out_block(&base_fn, po, &ret_block);
+
+    // println!("output is\n{}", out);
+
+    out.into()
+}
+
+#[proc_macro_attribute]
+pub fn pluginop_result(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attrs = parse_macro_input!(attr as AttributeArgs);
+    let po = match &attrs[0] {
+        syn::NestedMeta::Meta(m) => match m {
+            syn::Meta::Path(po) => po,
+            syn::Meta::List(_) => todo!("meta list"),
+            syn::Meta::NameValue(_) => todo!("meta nv"),
+        },
+        syn::NestedMeta::Lit(_) => todo!("lit"),
+    };
+    let base_fn = parse_macro_input!(item as ItemFn);
+
+    let ret_block = get_ret_result_block(&base_fn.sig.output);
+    let out = get_out_block(&base_fn, po, &ret_block);
+
+    // println!("output is\n{}", out);
+
+    out.into()
+}
+
+/// Arguments that can be passed through the `protoop` macro. See the
+/// documentation of the macro `protoop` for more details.
+#[derive(Debug, FromMeta)]
+struct MacroArgs {
+    po: Path,
+    param: Ident,
+}
+
+#[proc_macro_attribute]
+pub fn pluginop_param(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attrs = parse_macro_input!(attr as AttributeArgs);
+    let attrs_args = match MacroArgs::from_list(&attrs) {
+        Ok(v) => v,
+        Err(e) => return TokenStream::from(e.write_errors()),
+    };
+
+    let po = attrs_args.po;
+    let param = attrs_args.param;
+
+    let base_fn = parse_macro_input!(item as ItemFn);
+
+    let ret_block = get_ret_block(&base_fn.sig.output);
+    get_out_param_block(param, &base_fn, &po, &ret_block).into()
+}
+
+#[proc_macro_attribute]
+pub fn pluginop_result_param(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attrs = parse_macro_input!(attr as AttributeArgs);
+    let attrs_args = match MacroArgs::from_list(&attrs) {
+        Ok(v) => v,
+        Err(e) => return TokenStream::from(e.write_errors()),
+    };
+
+    let po = attrs_args.po;
+    let param = attrs_args.param;
+
+    let base_fn = parse_macro_input!(item as ItemFn);
+
+    let ret_block = get_ret_result_block(&base_fn.sig.output);
+    get_out_param_block(param, &base_fn, &po, &ret_block).into()
 }

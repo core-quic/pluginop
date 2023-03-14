@@ -199,7 +199,7 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         pod: Option<&&ProtocolOperationDefault>,
         po: &PluginOp,
         params: &[PluginVal],
-    ) -> Result<Box<[PluginVal]>, Error> {
+    ) -> Result<Vec<PluginVal>, Error> {
         // PRE part
         for p in self.plugins.iter() {
             if let Some(func) = p.get_func(po, Anchor::Pre) {
@@ -242,7 +242,7 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
     }
 
     /// Invokes the protocol operation `po` and runs its anchors.
-    pub fn call(&self, po: &PluginOp, params: &[PluginVal]) -> Result<Box<[PluginVal]>, Error> {
+    pub fn call(&self, po: &PluginOp, params: &[PluginVal]) -> Result<Vec<PluginVal>, Error> {
         // trace!("Calling protocol operation {:?}", po);
 
         // TODO

@@ -19,6 +19,7 @@ pub enum ConversionError {
     InvalidU64,
     InvalidF32,
     InvalidF64,
+    InvalidUsize,
     InvalidDuration,
     InvalidInstant,
     InvalidFrame,
@@ -67,6 +68,8 @@ pub enum PluginOp {
 
     // Plugin control operation, unspecified protocol operations called by the application.
     PluginControl(u64),
+
+    Test,
 
     // TODO: think about the sending of packets, I think this should be version specific (only one protoop?).
 
@@ -214,6 +217,8 @@ pub enum PluginVal {
     F32(f32),
     /// A f64.
     F64(f64),
+    // A Usize, but encoded as a u64.
+    Usize(u64),
     /// A duration.
     Duration(Duration),
     /// A specific instant in time relative to the UNIX epoch.
@@ -243,6 +248,31 @@ macro_rules! impl_from_try_from {
             }
         }
     };
+}
+
+impl From<usize> for PluginVal {
+    fn from(value: usize) -> Self {
+        PluginVal::Usize(value as u64)
+    }
+}
+
+impl TryFrom<PluginVal> for usize {
+    type Error = ConversionError;
+
+    fn try_from(value: PluginVal) -> Result<Self, Self::Error> {
+        match value {
+            PluginVal::Usize(v) => Ok(v as Self),
+            _ => Err(ConversionError::InvalidUsize),
+        }
+    }
+}
+
+impl TryFrom<PluginVal> for () {
+    type Error = ConversionError;
+
+    fn try_from(_: PluginVal) -> Result<Self, Self::Error> {
+        Ok(())
+    }
 }
 
 impl_from_try_from!(PluginVal, I32, i32, ConversionError, InvalidI32);
