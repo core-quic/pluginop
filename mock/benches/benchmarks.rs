@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use pluginop::{
-    api::ToPluginizableConnection,
     common::{
         quic::{Frame, MaxDataFrame, QVal},
         PluginOp, PluginVal,
@@ -31,8 +30,7 @@ fn memory_allocation_bench() {
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = "../tests/memory-allocation/memory_allocation.wasm".to_string();
-    let pcd_ptr = &(**pcd) as *const _;
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok);
     let (po, a) = PluginOp::from_name("check_data");
     assert!(pcd.get_ph().provides(&po, a));
@@ -156,16 +154,13 @@ fn increase_max_data(pcd: &mut PluginizableConnectionDummy) {
 fn first_pluginop() {
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    let pc_ptr = &mut **pcd as *mut _;
-    pcd.get_conn_mut().set_pluginizable_connection(pc_ptr);
     pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 4000 }));
     assert_eq!(pcd.conn.max_tx_data, 4000);
     pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 2000 }));
     assert_eq!(pcd.conn.max_tx_data, 2000);
     // Fix this with the plugin.
     let path = "../tests/increase-max-data/increase_max_data.wasm".to_string();
-    let pc_ptr = &**pcd as *const _;
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pc_ptr);
+    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok);
     pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 4000 }));
     assert_eq!(pcd.conn.max_tx_data, 4000);
@@ -176,15 +171,13 @@ fn first_pluginop() {
 fn macro_simple() {
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    let pc_ptr = &mut **pcd as *mut _;
-    pcd.get_conn_mut().set_pluginizable_connection(pc_ptr);
     pcd.recv_pkt(
         Duration::from_millis(250),
         Duration::from_millis(10),
         Instant::now(),
     );
     let path = "../tests/macro-simple/macro_simple.wasm".to_string();
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pc_ptr);
+    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok);
     pcd.recv_pkt(
         Duration::from_millis(125),
@@ -200,8 +193,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = "../tests/simple-wasm/simple_wasm.wasm".to_string();
-    let pcd_ptr = &**pcd as *const _;
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok);
     let (po, a) = PluginOp::from_name("simple_call");
     assert!(pcd.get_ph().provides(&po, a));
@@ -217,8 +209,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = "../tests/static-memory/static_memory.wasm".to_string();
-    let pcd_ptr = &**pcd as *const _;
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok);
     c.bench_function("static memory", |b| b.iter(|| static_memory(&mut pcd)));
 
@@ -226,8 +217,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = "../tests/inputs-support/inputs_support.wasm".to_string();
-    let pcd_ptr = &**pcd as *const _;
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok);
     c.bench_function("inputs support", |b| b.iter(|| static_memory(&mut pcd)));
 
@@ -235,8 +225,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = "../tests/input-outputs/input_outputs.wasm".to_string();
-    let pcd_ptr = &**pcd as *const _;
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok);
     c.bench_function("input outputs", |b| b.iter(|| input_outputs(&mut pcd)));
 
@@ -244,8 +233,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = "../tests/increase-max-data/increase_max_data.wasm".to_string();
-    let pcd_ptr = &**pcd as *const _;
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok);
     c.bench_function("increase-max-data", |b| {
         b.iter(|| increase_max_data(&mut pcd))

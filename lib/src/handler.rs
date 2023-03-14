@@ -123,24 +123,29 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         }
     }
 
+    /// Sets the pointer to the connection context. **This pointer must be `Pin`**.
+    pub fn set_pluginizable_connection(
+        &mut self,
+        conn: *const PluginizableConnection<CTP>,
+    ) -> bool {
+        if self.conn.is_null() {
+            self.conn = RawMutPtr::new(conn as *mut _);
+        } else if !self.conn.ptr_eq(conn as *mut _) {
+            error!("Trying to attach a same PH to different connections");
+            return false;
+        }
+        true
+    }
+
     /// Attaches a new plugin whose bytecode is accessible through the provided path. Returns `true`
     /// if the insertion succeeded, `false` otherwise.
     ///
     /// If the insertion succeeds and the plugin provides an `init` function as a protocol
     /// operation, this function calls it. This can be useful to, e.g., initialize a plugin-specific
     /// structure or register new frames.
-    ///
-    /// When inserting the plugin, the caller provides the pointer to the connection context through
-    /// `ptr`. **This pointer must be `Pin`**.
-    pub fn insert_plugin(
-        &mut self,
-        plugin_fname: &PathBuf,
-        conn: *const PluginizableConnection<CTP>,
-    ) -> bool {
+    pub fn insert_plugin(&mut self, plugin_fname: &PathBuf) -> bool {
         if self.conn.is_null() {
-            self.conn = RawMutPtr::new(conn as *const _ as *mut _)
-        } else if !self.conn.ptr_eq(conn as *const _ as *mut _) {
-            error!("Trying to attach a same PH to different connections");
+            error!("Trying to insert a plugin without set the pluginizable connection pointer");
             return false;
         }
         let ph_ptr = self as *mut _;

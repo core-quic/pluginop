@@ -122,17 +122,18 @@ pub struct PluginizableConnectionDummy(Box<PluginizableConnection<ConnectionDumm
 impl PluginizableConnectionDummy {
     pub fn new_pluginizable_connection(
         exports_func: fn(&mut Store, &FunctionEnv<Env<ConnectionDummy>>) -> Exports,
-    ) -> Box<PluginizableConnectionDummy> {
+    ) -> PluginizableConnectionDummy {
         let conn = ConnectionDummy {
             pc: None,
             max_tx_data: 2000,
             srtt: Duration::from_millis(333),
         };
-        let mut ret = Box::new(PluginizableConnectionDummy(
+        let mut ret = PluginizableConnectionDummy(
             PluginizableConnection::new_pluginizable_connection(exports_func, conn),
-        ));
-        let pc_ptr = &mut *ret.0 as *mut _;
+        );
+        let pc_ptr = ret.0.as_mut() as *mut _;
         ret.0.get_conn_mut().set_pluginizable_connection(pc_ptr);
+        ret.0.get_ph_mut().set_pluginizable_connection(pc_ptr);
         ret
     }
 
@@ -194,8 +195,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/simple-wasm/simple_wasm.wasm".to_string();
-        let pcd_ptr = &pcd as *const _ as *const _;
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
         assert!(ok);
         let (po, a) = PluginOp::from_name("simple_call");
         assert!(pcd.0.get_ph().provides(&po, a));
@@ -210,8 +210,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/memory-allocation/memory_allocation.wasm".to_string();
-        let pcd_ptr = &pcd as *const _ as *const _;
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
         assert!(ok);
         let (po, a) = PluginOp::from_name("check_data");
         assert!(pcd.get_ph().provides(&po, a));
@@ -236,8 +235,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = path.to_string();
-        let pcd_ptr = &pcd as *const _ as *const _;
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
         assert!(ok);
         let (po, a) = PluginOp::from_name("get_mult_value");
         assert!(pcd.get_ph().provides(&po, a));
@@ -279,8 +277,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/input-outputs/input_outputs.wasm".to_string();
-        let pcd_ptr = &pcd as *const _ as *const _;
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pcd_ptr);
+        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
         assert!(ok);
         let (po, a) = PluginOp::from_name("get_calc_value");
         assert!(pcd.get_ph().provides(&po, a));
@@ -336,8 +333,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/increase-max-data/increase_max_data.wasm".to_string();
-        let pc_ptr = &*pcd.0 as *const _;
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pc_ptr);
+        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
         assert!(ok);
         let (po, a) = PluginOp::from_name("process_frame_10");
         assert!(pcd.get_ph().provides(&po, a));
@@ -372,8 +368,7 @@ mod tests {
         assert_eq!(pcd.conn.max_tx_data, 2000);
         // Fix this with the plugin.
         let path = "../tests/increase-max-data/increase_max_data.wasm".to_string();
-        let pc_ptr = &*pcd.0 as *const _;
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pc_ptr);
+        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
         assert!(ok);
         pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 4000 }));
         assert_eq!(pcd.conn.max_tx_data, 4000);
@@ -385,14 +380,13 @@ mod tests {
     fn pluginop_macro_simple() {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-        let pc_ptr = &mut *pcd.0 as *mut _;
         pcd.recv_pkt(
             Duration::from_millis(250),
             Duration::from_millis(10),
             Instant::now(),
         );
         let path = "../tests/macro-simple/macro_simple.wasm".to_string();
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into(), pc_ptr);
+        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
         assert!(ok);
         pcd.recv_pkt(
             Duration::from_millis(125),
