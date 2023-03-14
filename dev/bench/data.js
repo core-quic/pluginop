@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1678709361705,
+  "lastUpdate": 1678815346533,
   "repoUrl": "https://github.com/qdeconinck/pluginop",
   "entries": {
     "Pluginop benchmarks": [
@@ -761,6 +761,78 @@ window.BENCHMARK_DATA = {
             "name": "macro simple",
             "value": 5650461,
             "range": "± 195067",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "committer": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "distinct": true,
+          "id": "e45b74cc51725fa758d7c1404acde1d98bac04d4",
+          "message": "first working version for the simplest plugin of core-quic",
+          "timestamp": "2023-03-14T18:29:05+01:00",
+          "tree_id": "6ca17fa349746661dd56f4386b30a47086187ad6",
+          "url": "https://github.com/qdeconinck/pluginop/commit/e45b74cc51725fa758d7c1404acde1d98bac04d4"
+        },
+        "date": 1678815345396,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "run and return",
+            "value": 140,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "memory allocation",
+            "value": 5995033,
+            "range": "± 550361",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "static memory",
+            "value": 4369,
+            "range": "± 52",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inputs support",
+            "value": 4840,
+            "range": "± 63",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "input outputs",
+            "value": 5956,
+            "range": "± 68",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "increase-max-data",
+            "value": 4065,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first pluginop",
+            "value": 11900884,
+            "range": "± 266609",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "macro simple",
+            "value": 5764107,
+            "range": "± 122491",
             "unit": "ns/iter"
           }
         ]
