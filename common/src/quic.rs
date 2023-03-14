@@ -48,7 +48,7 @@ pub enum Registration {
 
 /// An enum to enumerate the three packet number spaces, as defined by Section
 /// A.2 of quic-recovery.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
 #[repr(usize)]
 pub enum KPacketNumberSpace {
     Initial = 0,
@@ -854,6 +854,8 @@ pub enum QVal {
     Frame(Frame),
     /// Reception information.
     RcvInfo(RcvInfo),
+    /// Packet number space.
+    PacketNumberSpace(KPacketNumberSpace),
     // /// The next packet to be sent.
     // SentPacket(SentPacket),
 }
@@ -882,6 +884,13 @@ macro_rules! impl_from_try_from_qval {
 impl_from_try_from_qval!(PluginVal, Header, Header, ConversionError, InvalidQVal);
 impl_from_try_from_qval!(PluginVal, Frame, Frame, ConversionError, InvalidQVal);
 impl_from_try_from_qval!(PluginVal, RcvInfo, RcvInfo, ConversionError, InvalidQVal);
+impl_from_try_from_qval!(
+    PluginVal,
+    PacketNumberSpace,
+    KPacketNumberSpace,
+    ConversionError,
+    InvalidQVal
+);
 
 // impl From<Header> for Input {
 //     fn from(h: Header) -> Self {

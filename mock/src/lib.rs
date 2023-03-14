@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use pluginop::api::{ConnectionToPlugin, ToPluginizableConnection};
 use pluginop::common::quic::{self, Frame};
-use pluginop::common::{PluginOp};
+use pluginop::common::PluginOp;
 use pluginop::common::{
     quic::{ConnectionField, RecoveryField},
     PluginVal,
@@ -72,7 +72,6 @@ impl From<i64> for Error {
         Error
     }
 }
-
 
 impl ConnectionDummy {
     #[pluginop(PluginOp::UpdateRtt)]

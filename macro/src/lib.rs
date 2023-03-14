@@ -2,7 +2,8 @@ use darling::FromMeta;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input, punctuated::Punctuated, AttributeArgs, FnArg, Ident, ItemFn, Pat, Path, Type, ReturnType,
+    parse_macro_input, punctuated::Punctuated, AttributeArgs, FnArg, Ident, ItemFn, Pat, Path,
+    ReturnType, Type,
 };
 
 extern crate proc_macro;
@@ -43,7 +44,7 @@ fn get_ret_block(fn_output_type: &ReturnType) -> proc_macro2::TokenStream {
                 quote! {
                     let mut it = match res {
                         Ok(r) => r.into_iter(),
-                        Err(Error::OperationError(e)) => todo!("operation error; should you use pluginop_result?"),
+                        Err(pluginop::Error::OperationError(e)) => todo!("operation error; should you use pluginop_result?"),
                         Err(err) => panic!("plugin execution error: {:?}", err),
                     };
                     (
@@ -56,7 +57,7 @@ fn get_ret_block(fn_output_type: &ReturnType) -> proc_macro2::TokenStream {
                 quote!(
                     let mut it = match res {
                         Ok(r) => r.into_iter(),
-                        Err(Error::OperationError(e)) => todo!("operation error; should you use pluginop_result?"),
+                        Err(pluginop::Error::OperationError(e)) => todo!("operation error; should you use pluginop_result?"),
                         Err(err) => panic!("plugin execution error: {:?}", err),
                     };
                     { it.next().unwrap().try_into().unwrap() }
@@ -79,7 +80,7 @@ fn get_ret_result_block(fn_output_type: &ReturnType) -> proc_macro2::TokenStream
                 quote! {
                     let mut it = match res {
                         Ok(r) => r.into_iter(),
-                        Err(Error::OperationError(e)) => return Err(e.into()),
+                        Err(pluginop::Error::OperationError(e)) => return Err(e.into()),
                         Err(err) => panic!("plugin execution error: {:?}", err),
                     };
                     Ok((
@@ -92,17 +93,24 @@ fn get_ret_result_block(fn_output_type: &ReturnType) -> proc_macro2::TokenStream
                 quote!(
                     let mut it = match res {
                         Ok(r) => r.into_iter(),
-                        Err(Error::OperationError(e)) => return Err(e.into()),
+                        Err(pluginop::Error::OperationError(e)) => return Err(e.into()),
                         Err(err) => panic!("plugin execution error: {:?}", err),
                     };
-                    { Ok(it.next().unwrap().try_into().unwrap()) }
+                    match it.next() {
+                        Some(r) => Ok(r.try_into().unwrap()),
+                        None => Ok(()),
+                    }
                 )
             }
         }
     }
 }
 
-fn get_out_block(base_fn: &ItemFn, po: &Path, ret_block: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+fn get_out_block(
+    base_fn: &ItemFn,
+    po: &Path,
+    ret_block: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
     let fn_args = extract_arg_idents(base_fn.sig.inputs.clone());
     let fn_inputs = &base_fn.sig.inputs;
     let mut fn_inputs_no_self = fn_inputs.clone();
@@ -138,7 +146,12 @@ fn get_out_block(base_fn: &ItemFn, po: &Path, ret_block: &proc_macro2::TokenStre
     }
 }
 
-fn get_out_param_block(param: Ident, base_fn: &ItemFn, po: &Path, ret_block: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+fn get_out_param_block(
+    param: Ident,
+    base_fn: &ItemFn,
+    po: &Path,
+    ret_block: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
     let fn_output = &base_fn.sig.output;
     let fn_inputs = &base_fn.sig.inputs;
     let fn_inputs_no_param: Vec<FnArg> = fn_inputs
