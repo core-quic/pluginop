@@ -9,6 +9,7 @@ use crate::{plugin::Env, PluginizableConnection};
 pub enum CTPError {
     BadType,
     SerializeError,
+    BadBytes,
 }
 
 /// A trait that needs to be implemented by the host implementation to provide
@@ -363,6 +364,61 @@ pub fn set_connection_from_plugin<CTP: ConnectionToPlugin>(
     }
 }
 
+pub fn get_bytes_from_plugin<CTP: ConnectionToPlugin>(
+    mut env: FunctionEnvMut<Env<CTP>>,
+    tag: u64,
+    len: u64,
+    res_ptr: WasmPtr<u8>,
+    res_len: WASMLen,
+) -> i64 {
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -2,
+    };
+    let view = memory.view(&env);
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked_mut() };
+    let mem = &mut memory_slice[res_ptr.offset() as usize..(res_ptr.offset() + res_len) as usize];
+    match env.data_mut().get_bytes(tag as usize, len as usize, mem) {
+        Ok(w) => w as i64,
+        Err(_) => -3,
+    }
+}
+
+pub fn put_bytes_from_plugin<CTP: ConnectionToPlugin>(
+    mut env: FunctionEnvMut<Env<CTP>>,
+    tag: u64,
+    ptr: WasmPtr<u8>,
+    len: WASMLen,
+) -> i64 {
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -2,
+    };
+    let view = memory.view(&env);
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked_mut() };
+    let mem = &mut memory_slice[ptr.offset() as usize..(ptr.offset() + len) as usize];
+    match env.data_mut().put_bytes(tag as usize, mem) {
+        Ok(w) => w as i64,
+        Err(_) => -3,
+    }
+}
+
 macro_rules! exports_insert {
     ($e:ident, $s:ident, $env:ident, $f:ident) => {
         $e.insert(stringify!($f), Function::new_typed_with_env($s, $env, $f));
@@ -390,6 +446,8 @@ pub fn get_imports_with<CTP: ConnectionToPlugin>(
     exports_insert!(exports, store, env, print_from_plugin);
     exports_insert!(exports, store, env, get_connection_from_plugin);
     exports_insert!(exports, store, env, set_connection_from_plugin);
+    exports_insert!(exports, store, env, get_bytes_from_plugin);
+    exports_insert!(exports, store, env, put_bytes_from_plugin);
 
     let mut imports = Imports::new();
     imports.register_namespace("env", exports);

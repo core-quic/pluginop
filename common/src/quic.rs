@@ -3,7 +3,7 @@ use unix_time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ConversionError, PluginVal};
+use crate::{Bytes, ConversionError, PluginVal};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[repr(C)]
@@ -298,10 +298,6 @@ pub enum RcvPacketField {
     /// The destination address contained in this packet, as a `SocketAddr`.
     DestinationAddress,
 }
-
-/// This type can possibly change over time. Offering directly raw bytes to plugins limits
-/// monitoring capabilities. Maybe a Bytes API?
-pub type Bytes = u64;
 
 /// Some additional fields that may be present in QUICv1, but are not ensure to be always
 /// present.

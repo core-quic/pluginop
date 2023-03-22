@@ -117,11 +117,17 @@ impl ConnectionDummy {
     }
 
     pub fn recv_frame(&mut self, f: quic::Frame) {
+        let dcid = vec![0, 1, 2, 3, 4, 5, 6, 7];
+        let bytes = self
+            .get_pluginizable_connection()
+            .unwrap()
+            .get_ph_mut()
+            .add_bytes_content(dcid.into());
         // Fake receive process.
         let hdr = quic::Header {
             first: 0,
             version: None,
-            destination_cid: 0,
+            destination_cid: bytes,
             source_cid: None,
             supported_versions: None,
             ext: None,
@@ -355,7 +361,8 @@ mod tests {
     fn increase_max_data() {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-        let path = "../tests/increase-max-data/increase_max_data.wasm".to_string();
+        let path = "../tests/increase-max-data/increase_max_data.wasm"
+            .to_string(); // "../tests/increase-max-data/increase_max_data.wasm".to_string();
         let ok = pcd.get_ph_mut().insert_plugin(&path.into());
         assert!(ok);
         let (po, a) = PluginOp::from_name("process_frame_10");
