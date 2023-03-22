@@ -1,4 +1,4 @@
-use pluginop_wasm::{PluginEnv, quic::{QVal, ConnectionField, Frame}};
+use pluginop_wasm::{PluginEnv, Error, quic::{QVal, ConnectionField, Frame}};
 
 #[no_mangle]
 pub extern fn process_frame_10(penv: &mut PluginEnv) -> i64 {
@@ -11,6 +11,28 @@ pub extern fn process_frame_10(penv: &mut PluginEnv) -> i64 {
         if penv.set_connection(ConnectionField::MaxTxData, md_frame.maximum_data).is_err() {
             return -3;
         }
+    }
+    let hdr = match penv.get_input::<QVal>(1) {
+        Ok(QVal::Header(hdr)) => hdr,
+        Err(Error::ShortInternalBuffer) => return 0,
+        _ => return -4,
+    };
+    let _bytes = match penv.get_bytes(hdr.destination_cid.tag, hdr.destination_cid.max_len) {
+        Ok(dcid) => dcid,
+        Err(_) => return -5,
+    };
+    let bytes = vec![42, 24, 36, 48, 90, 23, 12, 4];
+    match penv.put_bytes(hdr.destination_cid.tag, &bytes) {
+        Ok(8) => {},
+        Ok(_) => return -6,
+        Err(_) => return -7,
+    };
+    let actual_bytes = match penv.get_bytes(hdr.destination_cid.tag, 8) {
+        Ok(dcid) => dcid,
+        Err(_) => return -8,
+    };
+    if bytes != actual_bytes {
+        return -9;
     }
     0
 }

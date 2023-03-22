@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeSet,
     fmt::Debug,
+    io::Write,
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
     path::PathBuf,
@@ -14,7 +15,7 @@ use pluginop_common::{Anchor, PluginOp, PluginVal};
 use wasmer::{FunctionEnv, Imports, Instance, Module, Store};
 
 use crate::{
-    api::ConnectionToPlugin,
+    api::{CTPError, ConnectionToPlugin},
     handler::{Permission, PluginHandler},
     rawptr::RawMutPtr,
     Error, POCode, PluginFunction,
@@ -41,7 +42,69 @@ impl DerefMut for PluginValArray {
     }
 }
 
+/// TODO: Actual implementation.
 #[derive(Debug)]
+pub struct OctetsPtr(RawMutPtr<octets::Octets<'static>>);
+
+/// TODO: Actual implementation.
+#[derive(Debug)]
+pub struct OctetsMutPtr(RawMutPtr<octets::OctetsMut<'static>>);
+
+/// An enum storing the actual content of `Bytes` that are not directly exposed
+/// to plugins. Some side utilities are provided to let plugins access these
+/// values under some conditions.
+#[derive(Debug)]
+pub enum BytesContent {
+    Copied(Vec<u8>),
+    ZeroCopy(OctetsPtr),
+    ZeroCopyMut(OctetsMutPtr),
+}
+
+impl BytesContent {
+    /// The number of bytes available.
+    pub fn len(&self) -> usize {
+        match self {
+            BytesContent::Copied(v) => v.len(),
+            BytesContent::ZeroCopy(_) => todo!(),
+            BytesContent::ZeroCopyMut(_) => todo!(),
+        }
+    }
+
+    /// Whether there is any bytes to read.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Drains `len` bytes of the `BytesContent` and writes them in the slice `w`.
+    pub fn write_into(&mut self, len: usize, mut w: &mut [u8]) -> Result<usize, CTPError> {
+        match self {
+            BytesContent::Copied(v) => w
+                .write(v.drain(..len).as_slice())
+                .map_err(|_| CTPError::BadBytes),
+            BytesContent::ZeroCopy(_) => todo!(),
+            BytesContent::ZeroCopyMut(_) => todo!(),
+        }
+    }
+
+    /// Extends the `BytesContent` with the content of `r`.
+    pub fn extend_from(&mut self, r: &[u8]) -> Result<usize, CTPError> {
+        match self {
+            BytesContent::Copied(v) => {
+                v.extend_from_slice(r);
+                Ok(r.len())
+            }
+            BytesContent::ZeroCopy(_) => todo!(),
+            BytesContent::ZeroCopyMut(_) => todo!(),
+        }
+    }
+}
+
+impl From<Vec<u8>> for BytesContent {
+    fn from(value: Vec<u8>) -> Self {
+        Self::Copied(value)
+    }
+}
+
 pub struct Env<CTP: ConnectionToPlugin> {
     /// The underlying plugin handler holding the plugin running this environment.
     ph: RawMutPtr<PluginHandler<CTP>>,
@@ -93,6 +156,23 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
             // of the mutable calls on it.
             Some(unsafe { &mut **self.ph })
         }
+    }
+
+    pub fn get_bytes(&mut self, tag: usize, len: usize, mem: &mut [u8]) -> Result<usize, CTPError> {
+        let ph = self.get_ph().ok_or(CTPError::BadBytes)?;
+        let bc = ph.get_mut_bytes_content(tag)?;
+        if len > bc.len() {
+            warn!("Plugin requested {} bytes, but only {} left", len, bc.len());
+            return Err(CTPError::BadBytes);
+        }
+        bc.write_into(len, mem)
+    }
+
+    pub fn put_bytes(&mut self, tag: usize, mem: &[u8]) -> Result<usize, CTPError> {
+        let ph = self.get_ph().ok_or(CTPError::BadBytes)?;
+        let bc = ph.get_mut_bytes_content(tag)?;
+        // TODO: limit the length that plugins should be able to write.
+        bc.extend_from(mem)
     }
 }
 

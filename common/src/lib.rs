@@ -200,6 +200,18 @@ impl PluginOp {
     }
 }
 
+/// This type can possibly change over time. Offering directly raw bytes to plugins limits
+/// monitoring capabilities. Maybe a Bytes API?
+///
+/// Note that this content depends on the attached plugin handler.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, PartialOrd, Eq, Ord)]
+pub struct Bytes {
+    /// The tag to use to retrieve the associated data.
+    pub tag: u64,
+    /// The maximum length of bytes that can be fetched.
+    pub max_len: u64,
+}
+
 /// Values used to communicate with underlying plugins, either as inputs or
 /// outputs.
 #[allow(clippy::large_enum_variant)]
@@ -219,6 +231,8 @@ pub enum PluginVal {
     F64(f64),
     // A Usize, but encoded as a u64.
     Usize(u64),
+    // Some bytes.
+    Bytes(Bytes),
     /// A duration.
     Duration(Duration),
     /// A specific instant in time relative to the UNIX epoch.

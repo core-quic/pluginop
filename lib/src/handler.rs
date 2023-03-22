@@ -6,13 +6,13 @@ use std::{
 };
 
 use log::error;
-use pluginop_common::{Anchor, PluginOp, PluginVal};
+use pluginop_common::{Anchor, Bytes, PluginOp, PluginVal};
 use wasmer::{Engine, Exports, FunctionEnv, Store};
 use wasmer_compiler_singlepass::Singlepass;
 
 use crate::{
-    api::{get_imports_with, ConnectionToPlugin},
-    plugin::{create_env, Env, Plugin},
+    api::{get_imports_with, CTPError, ConnectionToPlugin},
+    plugin::{create_env, BytesContent, Env, Plugin},
     rawptr::RawMutPtr,
     Error, PluginFunction, PluginizableConnection,
 };
@@ -71,6 +71,8 @@ pub struct PluginHandler<CTP: ConnectionToPlugin> {
     exports_func: fn(&mut Store, &FunctionEnv<Env<CTP>>) -> Exports,
     /// The actual container of the plugins.
     plugins: PluginArray<CTP>,
+    /// Bytes contents that will be passed to potential plugins.
+    bytes_contents: UnsafeCell<Vec<BytesContent>>,
     /// Force this structure to be pinned.
     _pin: PhantomPinned,
 }
@@ -119,6 +121,7 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
             conn: RawMutPtr::null(),
             exports_func,
             plugins: PluginArray { array: Vec::new() },
+            bytes_contents: UnsafeCell::new(Vec::new()),
             _pin: PhantomPinned,
         }
     }
@@ -193,6 +196,24 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         }
     }
 
+    /// Sets bytes content.
+    pub fn add_bytes_content(&self, bc: BytesContent) -> Bytes {
+        let bytes_contents = unsafe { &mut *self.bytes_contents.get() };
+        let tag = bytes_contents.len() as u64;
+        let max_len = bc.len() as u64;
+        bytes_contents.push(bc);
+        Bytes { tag, max_len }
+    }
+
+    /// Gets a mutable reference on the `BytesContent` with tag `tag`.
+    pub(crate) fn get_mut_bytes_content(
+        &mut self,
+        tag: usize,
+    ) -> Result<&mut BytesContent, CTPError> {
+        let bytes_contents = self.bytes_contents.get_mut();
+        bytes_contents.get_mut(tag).ok_or(CTPError::BadBytes)
+    }
+
     /// Invokes the protocol operation `po` and runs its anchors.
     fn call_internal(
         &self,
@@ -237,6 +258,9 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
                 p.call(unsafe { &mut *self.store.get() }, func, params)?;
             }
         }
+
+        // If we had bytes contents, clear them now.
+        unsafe { &mut *self.bytes_contents.get() }.clear();
 
         Ok(res)
     }

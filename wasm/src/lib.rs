@@ -22,6 +22,7 @@ const SIZE: usize = 1500;
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Error {
     APICallError,
+    BadBytes,
     BadType,
     ShortInternalBuffer,
     SerializeError,
@@ -61,6 +62,10 @@ extern "C" {
     fn get_input_from_plugin(index: u32, res_ptr: WASMPtr, res_len: WASMLen) -> APIResult;
     /* Gets all inputs */
     fn get_inputs_from_plugin(res_ptr: WASMPtr, res_len: WASMLen) -> APIResult;
+    /* Read the bytes */
+    fn get_bytes_from_plugin(tag: u64, len: u64, res_ptr: WASMPtr, res_len: WASMLen) -> i64;
+    /* Put some bytes */
+    fn put_bytes_from_plugin(tag: u64, ptr: WASMPtr, len: WASMLen) -> i64;
 
     // ----- TODOs -----
     /* Functions for the buffer to read */
@@ -300,6 +305,26 @@ impl PluginEnv {
         }
         let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
         bincode::deserialize(slice).map_err(|_| Error::SerializeError)
+    }
+
+    pub fn get_bytes(&self, tag: u64, len: u64) -> Result<Vec<u8>> {
+        let mut res = Vec::<u8>::with_capacity(len as usize).into_boxed_slice();
+        let len =
+            unsafe { get_bytes_from_plugin(tag, len, res.as_mut_ptr() as WASMPtr, len as WASMLen) };
+        if len < 0 {
+            return Err(Error::BadBytes);
+        }
+        let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), len as usize) };
+        Ok(slice.to_vec())
+    }
+
+    pub fn put_bytes(&self, tag: u64, b: &[u8]) -> Result<usize> {
+        let written =
+            unsafe { put_bytes_from_plugin(tag, b.as_ptr() as WASMPtr, b.len() as WASMLen) };
+        if written < 0 {
+            return Err(Error::BadBytes);
+        }
+        Ok(written as usize)
     }
 }
 

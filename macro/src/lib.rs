@@ -129,12 +129,13 @@ fn get_out_block(
         #fn_vis fn #fn_name(#fn_inputs) #fn_output {
             use pluginop::api::ToPluginizableConnection;
             use pluginop::Error;
+            use pluginop::IntoWithPH;
             let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph());
-            if ph.map(|ph| ph.provides(& #po, pluginop::common::Anchor::Replace)).unwrap_or(false) {
-                let res = ph.unwrap().call(
+            if let Some(ph) = ph.filter(|ph| ph.provides(& #po, pluginop::common::Anchor::Replace)) {
+                let res = ph.call(
                     & #po,
                     &[
-                        #(#fn_args.clone().into() ,)*
+                        #(#fn_args.clone().into_with_ph(ph) ,)*
                     ],
                 );
 
@@ -183,12 +184,13 @@ fn get_out_param_block(
 
         #fn_vis fn #fn_name(#fn_inputs) #fn_output {
             use pluginop::api::ToPluginizableConnection;
+            use pluginop::IntoWithPH;
             let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph());
-            if ph.map(|ph| ph.provides(& #po(#param), pluginop::common::Anchor::Replace)).unwrap_or(false) {
-                let res = ph.unwrap().call(
+            if let Some(ph) = ph.filter(|ph| ph.provides(& #po(#param), pluginop::common::Anchor::Replace)) {
+                let res = ph.call(
                     & #po(#param),
                     &[
-                        #(#fn_args.clone().into() ,)*
+                        #(#fn_args.clone().into_with_ph(ph) ,)*
                     ],
                 );
 
