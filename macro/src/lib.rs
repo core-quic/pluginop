@@ -2,8 +2,8 @@ use darling::FromMeta;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input, punctuated::Punctuated, AttributeArgs, FnArg, Ident, ItemFn, Pat, Path,
-    ReturnType, Type,
+    parse_macro_input, punctuated::Punctuated, AttributeArgs, FnArg, GenericArgument, Ident,
+    ItemFn, Pat, PatType, Path, ReturnType, Type,
 };
 
 extern crate proc_macro;
@@ -31,6 +31,95 @@ fn extract_arg_idents_vec(fn_args: Vec<FnArg>) -> Vec<Pat> {
         .collect::<Vec<_>>()
 }
 
+// First boolean returns whether the type is `Octets` or `OctetsMut`. Second returns whether the
+// type is exactly `OctetsMut`, The third indicates whether the reference is mutable or not.
+fn has_octets(pt: &PatType) -> (bool, bool, bool) {
+    match &*pt.ty {
+        Type::Reference(tref) => match &*tref.elem {
+            Type::Path(p) => {
+                if p.path
+                    .segments
+                    .iter()
+                    .any(|ps| &ps.ident.to_string() == "Octets")
+                {
+                    (true, false, tref.mutability.is_some())
+                } else if p
+                    .path
+                    .segments
+                    .iter()
+                    .any(|ps| &ps.ident.to_string() == "OctetsMut")
+                {
+                    (true, true, tref.mutability.is_some())
+                } else {
+                    (false, false, false)
+                }
+            }
+            _ => (false, false, false),
+        },
+        _ => (false, false, false),
+    }
+}
+
+fn is_result_unit(ty: &syn::Type) -> bool {
+    match ty {
+        Type::Path(tp) => {
+            if let Some(ps) = tp
+                .path
+                .segments
+                .iter()
+                .find(|s| &s.ident.to_string() == "Result")
+            {
+                if let syn::PathArguments::AngleBracketed(ab) = &ps.arguments {
+                    if ab.args.len() != 1 {
+                        return false;
+                    }
+                    if let Some(GenericArgument::Type(syn::Type::Tuple(tu))) = ab.args.first() {
+                        return tu.elems.is_empty();
+                    }
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+fn get_param_block(
+    args: &Punctuated<FnArg, syn::token::Comma>,
+    ignore: Option<Ident>,
+) -> proc_macro2::TokenStream {
+    let args_code: Vec<proc_macro2::TokenStream> = args
+        .iter()
+        .filter_map(|a| match a {
+            FnArg::Typed(pt) => {
+                let pat = &pt.pat;
+                match has_octets(pt) {
+                    (true, false, true) => Some(quote!( OctetsPtr::from(#pat).into_with_ph(ph) )),
+                    (true, true, true) => Some(quote!( OctetsMutPtr::from(#pat).into_with_ph(ph) )),
+                    (true, _, false) => panic!("Octets argument must be mutable"),
+                    _ => {
+                        if let Some(ign) = &ignore {
+                            if let Pat::Ident(pi) = &*pt.pat {
+                                if pi.ident == *ign {
+                                    return None;
+                                }
+                            }
+                        }
+
+                        Some(quote!( #pat.clone().into_with_ph(ph) ))
+                    }
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    quote!(
+        &[
+            #(#args_code ,)*
+        ]
+    )
+}
+
 fn get_ret_block(fn_output_type: &ReturnType) -> proc_macro2::TokenStream {
     match fn_output_type {
         syn::ReturnType::Default => quote!({
@@ -44,7 +133,7 @@ fn get_ret_block(fn_output_type: &ReturnType) -> proc_macro2::TokenStream {
                 quote! {
                     let mut it = match res {
                         Ok(r) => r.into_iter(),
-                        Err(pluginop::Error::OperationError(e)) => todo!("operation error; should you use pluginop_result?"),
+                        Err(pluginop::Error::OperationError(e)) => todo!("operation error {:?}; should you use pluginop_result?", e),
                         Err(err) => panic!("plugin execution error: {:?}", err),
                     };
                     (
@@ -57,7 +146,7 @@ fn get_ret_block(fn_output_type: &ReturnType) -> proc_macro2::TokenStream {
                 quote!(
                     let mut it = match res {
                         Ok(r) => r.into_iter(),
-                        Err(pluginop::Error::OperationError(e)) => todo!("operation error; should you use pluginop_result?"),
+                        Err(pluginop::Error::OperationError(e)) => todo!("operation error {:?}; should you use pluginop_result?", e),
                         Err(err) => panic!("plugin execution error: {:?}", err),
                     };
                     { it.next().unwrap().try_into().unwrap() }
@@ -85,22 +174,31 @@ fn get_ret_result_block(fn_output_type: &ReturnType) -> proc_macro2::TokenStream
                     };
                     Ok((
                         #(
-                            #elems :: try_from(it.next().unwrap()).unwrap(),
+                            #elems :: try_from_with_ph(it.next().unwrap(), ph).unwrap(),
                         )*
                     ))
                 }
             } else {
-                quote!(
-                    let mut it = match res {
-                        Ok(r) => r.into_iter(),
-                        Err(pluginop::Error::OperationError(e)) => return Err(e.into()),
+                // We need to check if this is the unit type.
+                if is_result_unit(t) {
+                    quote!(match res {
+                        Ok(r) => Ok(()),
+                        Err(pluginop::Error::OperationError(e)) => Err(e.into()),
                         Err(err) => panic!("plugin execution error: {:?}", err),
-                    };
-                    match it.next() {
-                        Some(r) => Ok(r.try_into().unwrap()),
-                        None => Ok(()),
-                    }
-                )
+                    })
+                } else {
+                    quote!(
+                        let mut it = match res {
+                            Ok(r) => r.into_iter(),
+                            Err(pluginop::Error::OperationError(e)) => return Err(e.into()),
+                            Err(err) => panic!("plugin execution error: {:?}", err),
+                        };
+                        match it.next() {
+                            Some(r) => Ok(r.try_into_with_ph(ph).unwrap()),
+                            None => panic!("Missing output from the plugin"),
+                        }
+                    )
+                }
             }
         }
     }
@@ -120,6 +218,7 @@ fn get_out_block(
     let fn_block = &base_fn.block;
     let fn_output = &base_fn.sig.output;
     let fn_name_internal = format_ident!("__{}__", fn_name);
+    let param_code = get_param_block(fn_inputs, None);
 
     quote! {
         fn #fn_name_internal(#fn_inputs) #fn_output {
@@ -130,13 +229,14 @@ fn get_out_block(
             use pluginop::api::ToPluginizableConnection;
             use pluginop::Error;
             use pluginop::IntoWithPH;
+            use pluginop::TryIntoWithPH;
+            use pluginop::octets::OctetsMutPtr;
+            use pluginop::octets::OctetsPtr;
             let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph());
             if let Some(ph) = ph.filter(|ph| ph.provides(& #po, pluginop::common::Anchor::Replace)) {
                 let res = ph.call(
                     & #po,
-                    &[
-                        #(#fn_args.clone().into_with_ph(ph) ,)*
-                    ],
+                    #param_code,
                 );
 
                 #ret_block
@@ -155,43 +255,47 @@ fn get_out_param_block(
 ) -> proc_macro2::TokenStream {
     let fn_output = &base_fn.sig.output;
     let fn_inputs = &base_fn.sig.inputs;
-    let fn_inputs_no_param: Vec<FnArg> = fn_inputs
-        .clone()
-        .into_iter()
-        .filter(|e| {
-            if let FnArg::Typed(pt) = e {
-                if let Pat::Ident(pi) = &*pt.pat {
-                    pi.ident != param
-                } else {
-                    true
-                }
-            } else {
-                true
-            }
-        })
-        .collect();
-    let fn_inputs_no_self = fn_inputs_no_param.clone();
+    // let fn_inputs_no_param: Vec<FnArg> = fn_inputs
+    //     .clone()
+    //     .into_iter()
+    //     .filter(|e| {
+    //         if let FnArg::Typed(pt) = e {
+    //             if let Pat::Ident(pi) = &*pt.pat {
+    //                 pi.ident != param
+    //             } else {
+    //                 true
+    //             }
+    //         } else {
+    //             true
+    //         }
+    //     })
+    //     .collect();
+    let fn_inputs_iter: Vec<FnArg> = fn_inputs.clone().into_iter().collect();
+    let fn_inputs_no_self = fn_inputs_iter.clone();
     let fn_args = extract_arg_idents_vec(fn_inputs_no_self);
     let fn_vis = &base_fn.vis;
     let fn_name = &base_fn.sig.ident;
     let fn_block = &base_fn.block;
     let fn_name_internal = format_ident!("__{}__", fn_name);
+    let param_code = get_param_block(fn_inputs, Some(param.clone()));
 
     quote! {
-        fn #fn_name_internal(#(#fn_inputs_no_param,)*) #fn_output {
+        #[allow(unused_variables)]
+        fn #fn_name_internal(#(#fn_inputs_iter,)*) #fn_output {
             #fn_block
         }
 
         #fn_vis fn #fn_name(#fn_inputs) #fn_output {
             use pluginop::api::ToPluginizableConnection;
             use pluginop::IntoWithPH;
+            use pluginop::TryIntoWithPH;
+            use pluginop::octets::OctetsMutPtr;
+            use pluginop::octets::OctetsPtr;
             let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph());
             if let Some(ph) = ph.filter(|ph| ph.provides(& #po(#param), pluginop::common::Anchor::Replace)) {
                 let res = ph.call(
                     & #po(#param),
-                    &[
-                        #(#fn_args.clone().into_with_ph(ph) ,)*
-                    ],
+                    #param_code,
                 );
 
                 #ret_block
@@ -283,5 +387,9 @@ pub fn pluginop_result_param(attr: TokenStream, item: TokenStream) -> TokenStrea
     let base_fn = parse_macro_input!(item as ItemFn);
 
     let ret_block = get_ret_result_block(&base_fn.sig.output);
-    get_out_param_block(param, &base_fn, &po, &ret_block).into()
+    let out = get_out_param_block(param, &base_fn, &po, &ret_block);
+
+    // println!("output is\n{}", out);
+
+    out.into()
 }

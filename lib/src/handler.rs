@@ -6,16 +6,17 @@ use std::{
 };
 
 use log::error;
-use pluginop_common::{Anchor, Bytes, PluginOp, PluginVal};
+use pluginop_common::{quic::Registration, Anchor, Bytes, PluginOp, PluginVal};
 use wasmer::{Engine, Exports, FunctionEnv, Store};
 use wasmer_compiler_singlepass::Singlepass;
 
 use crate::{
     api::{get_imports_with, CTPError, ConnectionToPlugin},
     plugin::{create_env, BytesContent, Env, Plugin},
-    rawptr::RawMutPtr,
     Error, PluginFunction, PluginizableConnection,
 };
+
+use pluginop_rawptr::RawMutPtr;
 
 /// Get a store for plugins. Note that this function should be called once for a host.
 fn create_store() -> Store {
@@ -73,6 +74,8 @@ pub struct PluginHandler<CTP: ConnectionToPlugin> {
     plugins: PluginArray<CTP>,
     /// Bytes contents that will be passed to potential plugins.
     bytes_contents: UnsafeCell<Vec<BytesContent>>,
+    /// Registrations made by the plugins.
+    registrations: Vec<Registration>,
     /// Force this structure to be pinned.
     _pin: PhantomPinned,
 }
@@ -122,6 +125,7 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
             exports_func,
             plugins: PluginArray { array: Vec::new() },
             bytes_contents: UnsafeCell::new(Vec::new()),
+            registrations: Vec::new(),
             _pin: PhantomPinned,
         }
     }
@@ -146,30 +150,27 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
     /// If the insertion succeeds and the plugin provides an `init` function as a protocol
     /// operation, this function calls it. This can be useful to, e.g., initialize a plugin-specific
     /// structure or register new frames.
-    pub fn insert_plugin(&mut self, plugin_fname: &PathBuf) -> bool {
+    pub fn insert_plugin(&mut self, plugin_fname: &PathBuf) -> Result<(), Error> {
         if self.conn.is_null() {
             error!("Trying to insert a plugin without set the pluginizable connection pointer");
-            return false;
+            return Err(Error::InternalError(
+                "Trying to insert a plugin without set the pluginizable connection pointer"
+                    .to_string(),
+            ));
         }
         let ph_ptr = self as *mut _;
         let store = unsafe { &mut *self.store.get() };
         let env = FunctionEnv::new(store, create_env(RawMutPtr::new(ph_ptr)));
         let exports = (self.exports_func)(store, &env);
         let imports = get_imports_with(exports, store, &env);
-        match Plugin::new(plugin_fname, store, env, &imports) {
-            Some(p) => {
-                self.plugins.push(p);
-                // Now the plugin is at its definitive area in memory, so we can initialize it.
-                self.plugins
-                    .last_mut()
-                    .map(|p| p.initialize(unsafe { &mut *self.store.get() }).is_ok())
-                    .unwrap_or(false)
-            }
-            None => {
-                error!("Failed to insert plugin with path {:?}", plugin_fname);
-                false
-            }
-        }
+        let plugin = Plugin::new(plugin_fname, store, env, &imports)?;
+        self.plugins.push(plugin);
+        // Now the plugin is at its definitive area in memory, so we can initialize it.
+        self.plugins
+            .last_mut()
+            .ok_or(Error::PluginLoadingError("PluginNotInserted".to_string()))?
+            .initialize(unsafe { &mut *self.store.get() })
+            .map_err(|e| Error::PluginLoadingError(format!("{:?}", e)))
     }
 
     pub fn provides(&self, po: &PluginOp, anchor: Anchor) -> bool {
@@ -200,9 +201,14 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
     pub fn add_bytes_content(&self, bc: BytesContent) -> Bytes {
         let bytes_contents = unsafe { &mut *self.bytes_contents.get() };
         let tag = bytes_contents.len() as u64;
-        let max_len = bc.len() as u64;
+        let max_read_len = bc.read_len() as u64;
+        let max_write_len = bc.write_len() as u64;
         bytes_contents.push(bc);
-        Bytes { tag, max_len }
+        Bytes {
+            tag,
+            max_read_len,
+            max_write_len,
+        }
     }
 
     /// Gets a mutable reference on the `BytesContent` with tag `tag`.
@@ -212,6 +218,15 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
     ) -> Result<&mut BytesContent, CTPError> {
         let bytes_contents = self.bytes_contents.get_mut();
         bytes_contents.get_mut(tag).ok_or(CTPError::BadBytes)
+    }
+
+    /// Registers some plugin content.
+    pub(crate) fn add_registration(&mut self, r: Registration) {
+        self.registrations.push(r);
+    }
+
+    pub fn get_registrations(&self) -> &[Registration] {
+        &self.registrations
     }
 
     /// Invokes the protocol operation `po` and runs its anchors.

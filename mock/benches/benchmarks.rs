@@ -31,7 +31,7 @@ fn memory_allocation_bench() {
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = "../tests/memory-allocation/memory_allocation.wasm".to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
-    assert!(ok);
+    assert!(ok.is_ok());
     let (po, a) = PluginOp::from_name("check_data");
     assert!(pcd.get_ph().provides(&po, a));
     let ph = pcd.get_ph();
@@ -161,7 +161,7 @@ fn first_pluginop() {
     // Fix this with the plugin.
     let path = "../tests/increase-max-data/increase_max_data.wasm".to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
-    assert!(ok);
+    assert!(ok.is_ok());
     pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 4000 }));
     assert_eq!(pcd.conn.max_tx_data, 4000);
     pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 2000 }));
@@ -178,7 +178,7 @@ fn macro_simple() {
     );
     let path = "../tests/macro-simple/macro_simple.wasm".to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
-    assert!(ok);
+    assert!(ok.is_ok());
     pcd.recv_pkt(
         Duration::from_millis(125),
         Duration::from_millis(10),
@@ -194,7 +194,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = "../tests/simple-wasm/simple_wasm.wasm".to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
-    assert!(ok);
+    assert!(ok.is_ok());
     let (po, a) = PluginOp::from_name("simple_call");
     assert!(pcd.get_ph().provides(&po, a));
     let ph = pcd.get_ph();
@@ -210,7 +210,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = "../tests/static-memory/static_memory.wasm".to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
-    assert!(ok);
+    assert!(ok.is_ok());
     c.bench_function("static memory", |b| b.iter(|| static_memory(&mut pcd)));
 
     // Fourth test
@@ -218,7 +218,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = "../tests/inputs-support/inputs_support.wasm".to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
-    assert!(ok);
+    assert!(ok.is_ok());
     c.bench_function("inputs support", |b| b.iter(|| static_memory(&mut pcd)));
 
     // Fifth test
@@ -226,7 +226,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = "../tests/input-outputs/input_outputs.wasm".to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
-    assert!(ok);
+    assert!(ok.is_ok());
     c.bench_function("input outputs", |b| b.iter(|| input_outputs(&mut pcd)));
 
     // Sixth test
@@ -234,7 +234,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = "../tests/increase-max-data/increase_max_data.wasm".to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
-    assert!(ok);
+    assert!(ok.is_ok());
     c.bench_function("increase-max-data", |b| {
         b.iter(|| increase_max_data(&mut pcd))
     });
