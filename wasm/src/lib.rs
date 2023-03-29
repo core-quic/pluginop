@@ -1,6 +1,8 @@
 //! A sub-crate of `protocol-operation` that should be imported by plugins.
 
+use std::cell::UnsafeCell;
 use std::convert::TryInto;
+use std::ops::Deref;
 
 pub use pluginop_common::quic;
 use pluginop_common::APIResult;
@@ -8,6 +10,8 @@ pub use pluginop_common::PluginOp;
 use pluginop_common::WASMLen;
 use pluginop_common::WASMPtr;
 
+use pluginop_common::quic::Registration;
+pub use pluginop_common::Bytes;
 use pluginop_common::PluginVal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -66,6 +70,8 @@ extern "C" {
     fn get_bytes_from_plugin(tag: u64, len: u64, res_ptr: WASMPtr, res_len: WASMLen) -> i64;
     /* Put some bytes */
     fn put_bytes_from_plugin(tag: u64, ptr: WASMPtr, len: WASMLen) -> i64;
+    /* Register a parametrized protocol operation */
+    fn register_from_plugin(ptr: WASMPtr, len: WASMLen) -> i64;
 
     // ----- TODOs -----
     /* Functions for the buffer to read */
@@ -113,8 +119,6 @@ extern "C" {
     ) -> APIResult;
     /* Gets the current time */
     fn get_current_time_from_plugin(res_ptr: WASMPtr, res_len: WASMLen);
-    /* Registers a protocol operation */
-    fn register_from_plugin(field_ptr: WASMPtr, field_len: WASMLen);
     /* Gets the time */
     fn get_time_from_plugin(res_ptr: WASMPtr, res_len: WASMLen);
     /* Generates a connection ID */
@@ -307,7 +311,8 @@ impl PluginEnv {
         bincode::deserialize(slice).map_err(|_| Error::SerializeError)
     }
 
-    pub fn get_bytes(&self, tag: u64, len: u64) -> Result<Vec<u8>> {
+    /// Reads some bytes and advances the related buffer (i.e., multiple calls gives different results).
+    pub fn get_bytes(&mut self, tag: u64, len: u64) -> Result<Vec<u8>> {
         let mut res = Vec::<u8>::with_capacity(len as usize).into_boxed_slice();
         let len =
             unsafe { get_bytes_from_plugin(tag, len, res.as_mut_ptr() as WASMPtr, len as WASMLen) };
@@ -318,7 +323,8 @@ impl PluginEnv {
         Ok(slice.to_vec())
     }
 
-    pub fn put_bytes(&self, tag: u64, b: &[u8]) -> Result<usize> {
+    /// Writes some bytes and advances the related buffer (i.e., multiple calls gives different results).
+    pub fn put_bytes(&mut self, tag: u64, b: &[u8]) -> Result<usize> {
         let written =
             unsafe { put_bytes_from_plugin(tag, b.as_ptr() as WASMPtr, b.len() as WASMLen) };
         if written < 0 {
@@ -326,7 +332,43 @@ impl PluginEnv {
         }
         Ok(written as usize)
     }
+
+    pub fn register(&mut self, r: Registration) -> Result<()> {
+        let serialized = bincode::serialize(&r).expect("serialized field");
+        match unsafe {
+            register_from_plugin(serialized.as_ptr() as WASMPtr, serialized.len() as WASMLen)
+        } {
+            0 => Ok(()),
+            _ => Err(Error::SerializeError),
+        }
+    }
 }
+
+/// A cell structure to be used in single-threaded plugins.
+pub struct PluginCell<T>(UnsafeCell<T>);
+
+impl<T> PluginCell<T> {
+    pub fn new(v: T) -> Self {
+        Self(UnsafeCell::new(v))
+    }
+
+    // TODO: solve this lint.
+    #[allow(clippy::mut_from_ref)]
+    pub fn get_mut(&self) -> &mut T {
+        unsafe { &mut *self.0.get() }
+    }
+}
+
+impl<T: Sync + Send> Deref for PluginCell<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.0.get() }
+    }
+}
+
+unsafe impl<T: Send> Send for PluginCell<T> {}
+unsafe impl<T: Sync> Sync for PluginCell<T> {}
 
 #[allow(dead_code)]
 mod todo {
@@ -340,8 +382,8 @@ mod todo {
     use crate::{
         buffer_get_bytes_from_plugin, buffer_put_bytes_from_plugin, call_proto_op_from_plugin,
         cancel_timer_from_plugin, generate_connection_id_from_plugin, get_current_time_from_plugin,
-        get_sent_packet_from_plugin, get_time_from_plugin, register_from_plugin,
-        set_recovery_from_plugin, set_timer_from_plugin, PluginEnv, SIZE,
+        get_sent_packet_from_plugin, get_time_from_plugin, set_recovery_from_plugin,
+        set_timer_from_plugin, PluginEnv, SIZE,
     };
 
     impl PluginEnv {
@@ -501,16 +543,6 @@ mod todo {
             }
             let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
             bincode::deserialize(slice).expect("no error")
-        }
-
-        fn register(r: quic::Registration) {
-            let serialized_field = bincode::serialize(&r).expect("serialized field");
-            unsafe {
-                register_from_plugin(
-                    serialized_field.as_ptr() as WASMPtr,
-                    serialized_field.len() as WASMLen,
-                )
-            }
         }
 
         fn get_time() -> unix_time::Instant {

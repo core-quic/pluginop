@@ -8,7 +8,7 @@ use common::PluginVal;
 use handler::PluginHandler;
 use plugin::Env;
 use pluginop_common::{quic, PluginInputType, PluginOp, PluginOutputType};
-use rawptr::RawMutPtr;
+use pluginop_rawptr::RawMutPtr;
 use unix_time::Instant;
 use wasmer::{RuntimeError, TypedFunction};
 
@@ -90,6 +90,8 @@ impl<T> DerefMut for ParentReferencer<T> {
 /// An error that may happen during the operations of this library.
 #[derive(Clone, Debug)]
 pub enum Error {
+    InternalError(String),
+    PluginLoadingError(String),
     RuntimeError(RuntimeError),
     NoDefault(PluginOp),
     OutputConversionError(String),
@@ -130,6 +132,7 @@ macro_rules! impl_from_with_ph {
     };
 }
 
+impl_from_with_ph!(PluginVal, bool);
 impl_from_with_ph!(PluginVal, i32);
 impl_from_with_ph!(PluginVal, i64);
 impl_from_with_ph!(PluginVal, u32);
@@ -146,6 +149,7 @@ impl_from_with_ph!(PluginVal, quic::Header);
 impl_from_with_ph!(PluginVal, quic::Frame);
 impl_from_with_ph!(PluginVal, quic::RcvInfo);
 impl_from_with_ph!(PluginVal, quic::KPacketNumberSpace);
+impl_from_with_ph!(PluginVal, quic::PacketType);
 
 impl<CTP: ConnectionToPlugin> FromWithPH<Vec<u8>, CTP> for PluginVal {
     fn from_with_ph(value: Vec<u8>, ph: &PluginHandler<CTP>) -> Self {
@@ -164,6 +168,18 @@ where
 {
     fn into_with_ph(self, ph: &PluginHandler<CTP>) -> PluginVal {
         PluginVal::from_with_ph(self, ph)
+    }
+}
+
+impl<CTP: ConnectionToPlugin> FromWithPH<octets::OctetsPtr, CTP> for PluginVal {
+    fn from_with_ph(value: octets::OctetsPtr, ph: &PluginHandler<CTP>) -> Self {
+        PluginVal::Bytes(ph.add_bytes_content(value.into()))
+    }
+}
+
+impl<CTP: ConnectionToPlugin> FromWithPH<octets::OctetsMutPtr, CTP> for PluginVal {
+    fn from_with_ph(value: octets::OctetsMutPtr, ph: &PluginHandler<CTP>) -> Self {
+        PluginVal::Bytes(ph.add_bytes_content(value.into()))
     }
 }
 
@@ -194,25 +210,24 @@ pub trait TryIntoWithPH<T, CTP: ConnectionToPlugin>: Sized {
     fn try_into_with_ph(self, ph: &PluginHandler<CTP>) -> Result<T, Self::Error>;
 }
 
-impl<T: TryFrom<PluginVal>, CTP: ConnectionToPlugin> TryIntoWithPH<T, CTP> for PluginVal {
-    type Error = <T as TryFrom<PluginVal>>::Error;
+impl<CTP: ConnectionToPlugin, T: TryFromWithPH<PluginVal, CTP>> TryIntoWithPH<T, CTP>
+    for PluginVal
+{
+    type Error = <T as TryFromWithPH<PluginVal, CTP>>::Error;
 
-    fn try_into_with_ph(self, _: &PluginHandler<CTP>) -> Result<T, Self::Error> {
-        match self {
-            PluginVal::Bytes(_) => todo!("try_into_with_ph bytes"),
-            _ => self.try_into(),
-        }
+    fn try_into_with_ph(self, ph: &PluginHandler<CTP>) -> Result<T, Self::Error> {
+        T::try_from_with_ph(self, ph)
     }
 }
 
 pub mod api;
 pub mod handler;
 pub mod plugin;
-mod rawptr;
 
-// Reexport common and macro.
+// Reexport common, macro and octets.
 pub use pluginop_common as common;
 pub use pluginop_macro;
+pub use pluginop_octets as octets;
 
 // Also need to expose structures to create exports.
 pub use wasmer::{Exports, FunctionEnv, Store};

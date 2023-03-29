@@ -12,12 +12,13 @@ use std::{
 use fnv::FnvHashMap;
 use log::{error, warn};
 use pluginop_common::{Anchor, PluginOp, PluginVal};
+use pluginop_octets::{OctetsMutPtr, OctetsPtr};
+use pluginop_rawptr::RawMutPtr;
 use wasmer::{FunctionEnv, Imports, Instance, Module, Store};
 
 use crate::{
     api::{CTPError, ConnectionToPlugin},
     handler::{Permission, PluginHandler},
-    rawptr::RawMutPtr,
     Error, POCode, PluginFunction,
 };
 
@@ -42,14 +43,6 @@ impl DerefMut for PluginValArray {
     }
 }
 
-/// TODO: Actual implementation.
-#[derive(Debug)]
-pub struct OctetsPtr(RawMutPtr<octets::Octets<'static>>);
-
-/// TODO: Actual implementation.
-#[derive(Debug)]
-pub struct OctetsMutPtr(RawMutPtr<octets::OctetsMut<'static>>);
-
 /// An enum storing the actual content of `Bytes` that are not directly exposed
 /// to plugins. Some side utilities are provided to let plugins access these
 /// values under some conditions.
@@ -61,18 +54,26 @@ pub enum BytesContent {
 }
 
 impl BytesContent {
-    /// The number of bytes available.
-    pub fn len(&self) -> usize {
+    /// The number of bytes available to read.
+    pub fn read_len(&self) -> usize {
         match self {
             BytesContent::Copied(v) => v.len(),
-            BytesContent::ZeroCopy(_) => todo!(),
-            BytesContent::ZeroCopyMut(_) => todo!(),
+            BytesContent::ZeroCopy(o) => o.cap(),
+            BytesContent::ZeroCopyMut(_) => 0,
+        }
+    }
+
+    pub fn write_len(&self) -> usize {
+        match self {
+            BytesContent::Copied(v) => v.capacity() - v.len(),
+            BytesContent::ZeroCopy(_) => 0,
+            BytesContent::ZeroCopyMut(o) => o.cap(),
         }
     }
 
     /// Whether there is any bytes to read.
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.read_len() == 0
     }
 
     /// Drains `len` bytes of the `BytesContent` and writes them in the slice `w`.
@@ -81,8 +82,12 @@ impl BytesContent {
             BytesContent::Copied(v) => w
                 .write(v.drain(..len).as_slice())
                 .map_err(|_| CTPError::BadBytes),
-            BytesContent::ZeroCopy(_) => todo!(),
-            BytesContent::ZeroCopyMut(_) => todo!(),
+            BytesContent::ZeroCopy(o) => {
+                let b = o.get_bytes(len).map_err(|_| CTPError::BadBytes)?;
+                w.copy_from_slice(b.buf());
+                Ok(len)
+            }
+            BytesContent::ZeroCopyMut(_) => Err(CTPError::BadBytes),
         }
     }
 
@@ -93,8 +98,11 @@ impl BytesContent {
                 v.extend_from_slice(r);
                 Ok(r.len())
             }
-            BytesContent::ZeroCopy(_) => todo!(),
-            BytesContent::ZeroCopyMut(_) => todo!(),
+            BytesContent::ZeroCopy(_) => Err(CTPError::BadBytes),
+            BytesContent::ZeroCopyMut(o) => {
+                o.put_bytes(r).map_err(|_| CTPError::BadBytes)?;
+                Ok(r.len())
+            }
         }
     }
 }
@@ -102,6 +110,18 @@ impl BytesContent {
 impl From<Vec<u8>> for BytesContent {
     fn from(value: Vec<u8>) -> Self {
         Self::Copied(value)
+    }
+}
+
+impl From<OctetsPtr> for BytesContent {
+    fn from(value: OctetsPtr) -> Self {
+        Self::ZeroCopy(value)
+    }
+}
+
+impl From<OctetsMutPtr> for BytesContent {
+    fn from(value: OctetsMutPtr) -> Self {
+        Self::ZeroCopyMut(value)
     }
 }
 
@@ -161,8 +181,12 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
     pub fn get_bytes(&mut self, tag: usize, len: usize, mem: &mut [u8]) -> Result<usize, CTPError> {
         let ph = self.get_ph().ok_or(CTPError::BadBytes)?;
         let bc = ph.get_mut_bytes_content(tag)?;
-        if len > bc.len() {
-            warn!("Plugin requested {} bytes, but only {} left", len, bc.len());
+        if len > bc.read_len() {
+            warn!(
+                "Plugin requested {} bytes, but only {} left",
+                len,
+                bc.read_len()
+            );
             return Err(CTPError::BadBytes);
         }
         bc.write_into(len, mem)
@@ -284,14 +308,14 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
         store: &mut Store,
         env: FunctionEnv<Env<CTP>>,
         imports: &Imports,
-    ) -> Option<Self> {
+    ) -> Result<Self, Error> {
         match std::fs::read(plugin_fname) {
             Ok(wasm) => {
                 let module = match Module::from_binary(store, &wasm) {
                     Ok(m) => m,
                     Err(e) => {
                         error!("failed WASM compilation: {}", e);
-                        return None;
+                        return Err(Error::PluginLoadingError(e.to_string()));
                     }
                 };
 
@@ -313,23 +337,24 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
 
                         let pocodes = Plugin::<CTP>::get_pocodes(&instance, store);
 
-                        return Some(Plugin {
+                        Ok(Plugin {
                             instance: Arc::new(Box::pin(instance)),
                             env,
                             pocodes: Box::pin(pocodes),
                             plugin_state: u32::from_be_bytes(plugin_state),
-                        });
+                        })
                     }
                     Err(e) => {
                         error!("Cannot instantiate plugin: {}", e);
+                        Err(Error::PluginLoadingError(e.to_string()))
                     }
                 }
             }
             Err(e) => {
                 error!("Cannot read plugin: {}", e);
+                Err(Error::PluginLoadingError(e.to_string()))
             }
         }
-        None
     }
 
     fn get_pocodes(instance: &Instance, store: &mut Store) -> KeyValueCollection<PluginOp, POCode> {

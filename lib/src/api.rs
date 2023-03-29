@@ -419,6 +419,40 @@ pub fn put_bytes_from_plugin<CTP: ConnectionToPlugin>(
     }
 }
 
+pub fn register_from_plugin<CTP: ConnectionToPlugin>(
+    mut env: FunctionEnvMut<Env<CTP>>,
+    ptr: WasmPtr<u8>,
+    len: WASMLen,
+) -> i64 {
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -2,
+    };
+    let view = memory.view(&env);
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked() };
+    let r = match bincode::deserialize_from(
+        &memory_slice[ptr.offset() as usize..(ptr.offset() + len) as usize],
+    ) {
+        Ok(f) => f,
+        Err(_) => return -3,
+    };
+    let ph = if let Some(ph) = env.data_mut().get_ph() {
+        ph
+    } else {
+        return -4;
+    };
+    ph.add_registration(r);
+    0
+}
+
 macro_rules! exports_insert {
     ($e:ident, $s:ident, $env:ident, $f:ident) => {
         $e.insert(stringify!($f), Function::new_typed_with_env($s, $env, $f));
@@ -448,6 +482,7 @@ pub fn get_imports_with<CTP: ConnectionToPlugin>(
     exports_insert!(exports, store, env, set_connection_from_plugin);
     exports_insert!(exports, store, env, get_bytes_from_plugin);
     exports_insert!(exports, store, env, put_bytes_from_plugin);
+    exports_insert!(exports, store, env, register_from_plugin);
 
     let mut imports = Imports::new();
     imports.register_namespace("env", exports);

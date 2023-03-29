@@ -17,7 +17,8 @@ bincode = "1"
 fnv = "1"
 getrandom = "0.2"
 unix-time = "0.1"
-octets = "0.2"
+pluginop-octets = { path = "../octets" }
+pluginop-rawptr = { path = "../rawptr" }
 
 [dev-dependencies]
 env_logger = "0.10.0"

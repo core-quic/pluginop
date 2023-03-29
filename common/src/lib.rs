@@ -13,6 +13,7 @@ pub type APIResult = i64;
 
 #[derive(Clone, Debug)]
 pub enum ConversionError {
+    InvalidBool,
     InvalidI32,
     InvalidI64,
     InvalidU32,
@@ -20,6 +21,7 @@ pub enum ConversionError {
     InvalidF32,
     InvalidF64,
     InvalidUsize,
+    InvalidBytes,
     InvalidDuration,
     InvalidInstant,
     InvalidFrame,
@@ -208,8 +210,10 @@ impl PluginOp {
 pub struct Bytes {
     /// The tag to use to retrieve the associated data.
     pub tag: u64,
-    /// The maximum length of bytes that can be fetched.
-    pub max_len: u64,
+    /// The maximum number of bytes that can be fetched.
+    pub max_read_len: u64,
+    /// The maximum number of bytes that can be written.
+    pub max_write_len: u64,
 }
 
 /// Values used to communicate with underlying plugins, either as inputs or
@@ -217,6 +221,8 @@ pub struct Bytes {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
 pub enum PluginVal {
+    /// A boolean value.
+    Bool(bool),
     /// A i32.
     I32(i32),
     /// A i64.
@@ -289,12 +295,14 @@ impl TryFrom<PluginVal> for () {
     }
 }
 
+impl_from_try_from!(PluginVal, Bool, bool, ConversionError, InvalidBool);
 impl_from_try_from!(PluginVal, I32, i32, ConversionError, InvalidI32);
 impl_from_try_from!(PluginVal, I64, i64, ConversionError, InvalidI64);
 impl_from_try_from!(PluginVal, U32, u32, ConversionError, InvalidU32);
 impl_from_try_from!(PluginVal, U64, u64, ConversionError, InvalidU64);
 impl_from_try_from!(PluginVal, F32, f32, ConversionError, InvalidF32);
 impl_from_try_from!(PluginVal, F64, f64, ConversionError, InvalidF64);
+impl_from_try_from!(PluginVal, Bytes, Bytes, ConversionError, InvalidBytes);
 impl_from_try_from!(
     PluginVal,
     Duration,

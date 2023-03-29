@@ -5,31 +5,62 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Bytes, ConversionError, PluginVal};
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[repr(C)]
-pub enum FrameAckElliciting {
-    Yes,
-    No,
-}
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[repr(C)]
-pub enum FrameCountInFlight {
-    Yes,
-    No,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub enum FrameSendKind {
     OncePerPacket,
     ManyPerPacket,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub enum FrameSendOrder {
     AfterACK,
     BeforeStream,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[repr(C)]
+pub struct FrameRegistration {
+    ty: u64,
+    send_order: FrameSendOrder,
+    send_kind: FrameSendKind,
+    ack_eliciting: bool,
+    count_in_flight: bool,
+}
+
+impl FrameRegistration {
+    pub fn new(
+        ty: u64,
+        send_order: FrameSendOrder,
+        send_kind: FrameSendKind,
+        ack_eliciting: bool,
+        count_in_flight: bool,
+    ) -> Self {
+        Self {
+            ty,
+            send_order,
+            send_kind,
+            ack_eliciting,
+            count_in_flight,
+        }
+    }
+
+    pub fn get_type(&self) -> u64 {
+        self.ty
+    }
+
+    pub fn send_order(&self) -> FrameSendOrder {
+        self.send_order
+    }
+
+    pub fn ack_eliciting(&self) -> bool {
+        self.ack_eliciting
+    }
+
+    pub fn count_for_in_flight(&self) -> bool {
+        self.count_in_flight
+    }
 }
 
 /// A request from the plugin at initialization time.
@@ -37,13 +68,29 @@ pub enum FrameSendOrder {
 #[repr(C)]
 pub enum Registration {
     TransportParameter(u64),
-    Frame(
-        u64,
-        FrameSendOrder,
-        FrameSendKind,
-        FrameAckElliciting,
-        FrameCountInFlight,
-    ),
+    Frame(FrameRegistration),
+}
+
+/// QUIC packet type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+pub enum PacketType {
+    /// Initial packet.
+    Initial,
+
+    /// Retry packet.
+    Retry,
+
+    /// Handshake packet.
+    Handshake,
+
+    /// 0-RTT packet.
+    ZeroRTT,
+
+    /// Version negotiation packet.
+    VersionNegotiation,
+
+    /// 1-RTT short header packet.
+    Short,
 }
 
 /// An enum to enumerate the three packet number spaces, as defined by Section
@@ -852,6 +899,8 @@ pub enum QVal {
     RcvInfo(RcvInfo),
     /// Packet number space.
     PacketNumberSpace(KPacketNumberSpace),
+    // Packet type.
+    PacketType(PacketType),
     // /// The next packet to be sent.
     // SentPacket(SentPacket),
 }
@@ -884,6 +933,13 @@ impl_from_try_from_qval!(
     PluginVal,
     PacketNumberSpace,
     KPacketNumberSpace,
+    ConversionError,
+    InvalidQVal
+);
+impl_from_try_from_qval!(
+    PluginVal,
+    PacketType,
+    PacketType,
     ConversionError,
     InvalidQVal
 );
