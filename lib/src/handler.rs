@@ -221,7 +221,7 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
     }
 
     /// Registers some plugin content.
-    pub(crate) fn add_registration(&mut self, r: Registration) {
+    pub fn add_registration(&mut self, r: Registration) {
         self.registrations.push(r);
     }
 

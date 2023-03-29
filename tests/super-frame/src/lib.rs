@@ -183,9 +183,8 @@ pub extern fn wire_len_42(penv: &mut PluginEnv) -> i64 {
 }
 
 #[no_mangle]
-pub extern fn on_frame_reserved_42(penv: &mut PluginEnv) -> i64 {
+pub extern fn on_frame_reserved_42(_penv: &mut PluginEnv) -> i64 {
     PLUGIN_DATA.get_mut().in_flight = true;
-    penv.print("SUPER frame sent");
     0
 }
 

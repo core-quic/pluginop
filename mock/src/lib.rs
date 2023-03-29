@@ -3,12 +3,12 @@ use std::time::Duration;
 
 use pluginop::api::{ConnectionToPlugin, ToPluginizableConnection};
 use pluginop::common::quic::{self, Frame, Registration};
-use pluginop::common::PluginOp;
 use pluginop::common::{
     quic::{ConnectionField, RecoveryField},
     PluginVal,
 };
-use pluginop::octets::OctetsMut;
+use pluginop::common::{Bytes, PluginOp};
+use pluginop::octets::{Octets, OctetsMut};
 use pluginop::plugin::Env;
 use pluginop::pluginop_macro::{pluginop, pluginop_param, pluginop_result, pluginop_result_param};
 use pluginop::{api::CTPError, ParentReferencer, PluginizableConnection};
@@ -61,6 +61,7 @@ impl ToPluginizableConnection<ConnectionDummy> for ConnectionDummy {
     }
 }
 
+#[derive(Debug)]
 pub struct Error;
 
 pub enum MyResult<T> {
@@ -90,8 +91,23 @@ impl ConnectionDummy {
         Ok(())
     }
 
-    pub fn recv_pkt(&mut self, latest_rtt: Duration, ack_delay: Duration, now: Instant) {
-        self.update_rtt(latest_rtt, ack_delay, now);
+    #[pluginop_result_param(po = "PluginOp::ParseFrame", param = "ty")]
+    fn parse_frame(
+        &mut self,
+        ty: u64,
+        buf: &mut Octets,
+        pkt_type: quic::PacketType,
+    ) -> Result<quic::Frame, Error> {
+        match ty {
+            0x10 => {
+                if pkt_type != quic::PacketType::Short {
+                    return Err(Error);
+                }
+                let maximum_data = buf.get_varint().map_err(|_| Error)?;
+                Ok(quic::Frame::MaxData(quic::MaxDataFrame { maximum_data }))
+            }
+            _ => Err(Error),
+        }
     }
 
     #[pluginop_param(po = "PluginOp::ProcessFrame", param = "ty")]
@@ -155,7 +171,8 @@ impl ConnectionDummy {
         is_closing: bool,
         left: usize,
     ) -> bool {
-        false
+        // We only agree to send MAX_DATA frames.
+        ty == 0x10
     }
 
     #[pluginop_result_param(po = "PluginOp::PrepareFrame", param = "ty")]
@@ -165,12 +182,23 @@ impl ConnectionDummy {
         epoch: quic::KPacketNumberSpace,
         left: usize,
     ) -> Result<quic::Frame, Error> {
-        Err(Error)
+        if ty == 0x10 {
+            Ok(quic::Frame::MaxData(quic::MaxDataFrame {
+                maximum_data: 0x2000,
+            }))
+        } else {
+            Err(Error)
+        }
     }
 
     #[pluginop_param(po = "PluginOp::WireLen", param = "ty")]
     fn wire_len(&mut self, ty: u64, f: quic::Frame) -> usize {
-        5000
+        if ty == 0x10 {
+            // 1 ty byte + 2 byte encoding for maximum data 0x2000
+            1 + 2
+        } else {
+            5000
+        }
     }
 
     #[pluginop_result_param(po = "PluginOp::WriteFrame", param = "ty")]
@@ -180,13 +208,23 @@ impl ConnectionDummy {
         f: quic::Frame,
         buf: &mut OctetsMut,
     ) -> Result<usize, Error> {
-        Err(Error)
+        if ty == 0x10 {
+            let before = buf.cap();
+            buf.put_varint(0x10).map_err(|_| Error)?;
+            buf.put_varint(0x2000).map_err(|_| Error)?;
+            Ok(before - buf.cap())
+        } else {
+            Err(Error)
+        }
     }
 
     #[pluginop_param(po = "PluginOp::OnFrameReserved", param = "ty")]
     fn on_frame_reserved(&mut self, ty: u64, f: quic::Frame) {}
 
-    pub fn send_pkt(&mut self, buf: &mut OctetsMut) -> usize {
+    #[pluginop_param(po = "PluginOp::NotifyFrame", param = "ty")]
+    fn notify_frame(&mut self, ty: u64, f: quic::Frame, lost: bool) {}
+
+    pub fn send_pkt(&mut self, buf: &mut OctetsMut, notify: Option<bool>) -> usize {
         let registrations = self
             .get_pluginizable_connection()
             .unwrap()
@@ -204,6 +242,7 @@ impl ConnectionDummy {
             .collect::<Vec<_>>();
         let mut _ack_eliciting = false;
         let mut _in_flight = false;
+        let mut frames = Vec::new();
         for r in registrations {
             if self.should_send_frame(
                 r.get_type(),
@@ -224,6 +263,7 @@ impl ConnectionDummy {
                     match self.write_frame(r.get_type(), f, buf) {
                         Ok(_) => {
                             self.on_frame_reserved(r.get_type(), f);
+                            frames.push((r.get_type(), f));
                             _ack_eliciting |= r.ack_eliciting();
                             _in_flight |= r.count_for_in_flight();
                         }
@@ -232,7 +272,45 @@ impl ConnectionDummy {
                 }
             }
         }
+
+        // Fake here the acknowledgment of the sent frames.
+        if let Some(lost) = notify {
+            for (ty, f) in frames {
+                self.notify_frame(ty, f, lost);
+            }
+        }
+
         buf.off()
+    }
+
+    pub fn recv_pkt(&mut self, buf: &mut Octets, now: Instant) -> Result<usize, Error> {
+        // Fake receive process.
+        // XXX: here, we do not allow the plugin to read the DCID.
+        let hdr = quic::Header {
+            first: 0,
+            version: None,
+            destination_cid: Bytes {
+                tag: u64::MAX,
+                max_read_len: 0,
+                max_write_len: 0,
+            },
+            source_cid: None,
+            supported_versions: None,
+            ext: None,
+        };
+        let rcv_info = quic::RcvInfo {
+            from: "0.0.0.0:1234".parse().unwrap(),
+            to: "0.0.0.0:4321".parse().unwrap(),
+        };
+        let epoch = 2;
+        // Parse unencrypted bytes as direct frames.
+        while buf.cap() > 0 {
+            let ty = buf.get_varint().map_err(|_| Error)?;
+            let f = self.parse_frame(ty, buf, quic::PacketType::Short)?;
+            self.process_frame(ty, f, hdr, rcv_info, epoch, now);
+        }
+
+        Ok(buf.off())
     }
 }
 
@@ -260,12 +338,17 @@ impl PluginizableConnectionDummy {
         self.0.conn.recv_frame(f)
     }
 
-    pub fn recv_pkt(&mut self, lrtt: Duration, ack_delay: Duration, now: Instant) {
-        self.0.conn.recv_pkt(lrtt, ack_delay, now)
+    // Should not be really part of an official API, but kept for testing purposes.
+    pub fn update_rtt(&mut self, lrtt: Duration, ack_delay: Duration, now: Instant) {
+        self.0.conn.update_rtt(lrtt, ack_delay, now)
     }
 
-    pub fn send_pkt(&mut self, buf: &mut OctetsMut) -> usize {
-        self.0.conn.send_pkt(buf)
+    pub fn recv_pkt(&mut self, buf: &mut Octets, now: Instant) -> Result<usize, Error> {
+        self.0.conn.recv_pkt(buf, now)
+    }
+
+    pub fn send_pkt(&mut self, buf: &mut OctetsMut, notify: Option<bool>) -> usize {
+        self.0.conn.send_pkt(buf, notify)
     }
 }
 
@@ -289,10 +372,10 @@ mod tests {
 
     use pluginop::{
         common::{
-            quic::{Frame, MaxDataFrame, QVal},
+            quic::{self, Frame, MaxDataFrame, QVal},
             PluginOp, PluginVal,
         },
-        octets::OctetsMut,
+        octets::{Octets, OctetsMut},
         plugin::Env,
         Error,
     };
@@ -504,7 +587,7 @@ mod tests {
     fn pluginop_macro_simple() {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-        pcd.recv_pkt(
+        pcd.update_rtt(
             Duration::from_millis(250),
             Duration::from_millis(10),
             Instant::now(),
@@ -512,7 +595,7 @@ mod tests {
         let path = "../tests/macro-simple/macro_simple.wasm".to_string();
         let ok = pcd.get_ph_mut().insert_plugin(&path.into());
         assert!(ok.is_ok());
-        pcd.recv_pkt(
+        pcd.update_rtt(
             Duration::from_millis(125),
             Duration::from_millis(10),
             Instant::now(),
@@ -522,17 +605,43 @@ mod tests {
     }
 
     #[test]
+    fn max_data() {
+        let mut pcd =
+            PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
+        pcd.get_ph_mut()
+            .add_registration(quic::Registration::Frame(quic::FrameRegistration::new(
+                0x10,
+                quic::FrameSendOrder::AfterACK,
+                quic::FrameSendKind::OncePerPacket,
+                true,
+                true,
+            )));
+        let mut orig_buf = [0; 1350];
+        let mut buf = OctetsMut::with_slice(&mut orig_buf);
+        let w = pcd.send_pkt(&mut buf, Some(false));
+        assert_eq!(w, 3);
+        assert_eq!(&[0x10, 0x60, 0x00], &orig_buf[..3]);
+        let mut buf = Octets::with_slice(&mut orig_buf[..3]);
+        let res = pcd.recv_pkt(&mut buf, Instant::now());
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), 3);
+    }
+
+    #[test]
     fn super_frame() {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/super-frame/super_frame.wasm".to_string();
         let ok = pcd.get_ph_mut().insert_plugin(&path.into());
         assert!(ok.is_ok());
-        let mut buf = [0; 1350];
-        let mut buf = OctetsMut::with_slice(&mut buf);
-        let w = pcd.send_pkt(&mut buf);
+        let mut orig_buf = [0; 1350];
+        let mut buf = OctetsMut::with_slice(&mut orig_buf);
+        let w = pcd.send_pkt(&mut buf, Some(false));
         assert_eq!(w, 3);
-        let orig_buf = buf.buf();
         assert_eq!(&[0x40, 0x42, 0x00], &orig_buf[..3]);
+        let mut buf = Octets::with_slice(&mut orig_buf[..3]);
+        let res = pcd.recv_pkt(&mut buf, Instant::now());
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), 3);
     }
 }
