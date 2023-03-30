@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1680172497071,
+  "lastUpdate": 1680185052620,
   "repoUrl": "https://github.com/qdeconinck/pluginop",
   "entries": {
     "Pluginop benchmarks": [
@@ -1073,6 +1073,96 @@ window.BENCHMARK_DATA = {
             "name": "super-frame",
             "value": 11832,
             "range": "± 549",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "committer": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "distinct": true,
+          "id": "42dc2a1c2732a1788bdb19d2b1a25fd2fe7ec00d",
+          "message": "add new test doing the same as native mock\n\n+ support for flamegraph benchmarking.",
+          "timestamp": "2023-03-30T15:55:49+02:00",
+          "tree_id": "69578b4f768a0272941f27a5654b86fb9d6d5548",
+          "url": "https://github.com/qdeconinck/pluginop/commit/42dc2a1c2732a1788bdb19d2b1a25fd2fe7ec00d"
+        },
+        "date": 1680185050932,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "run and return",
+            "value": 191,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "memory allocation",
+            "value": 7452510,
+            "range": "± 394735",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "static memory",
+            "value": 4921,
+            "range": "± 99",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inputs support",
+            "value": 5611,
+            "range": "± 112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "input outputs",
+            "value": 6972,
+            "range": "± 162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "increase-max-data",
+            "value": 5051,
+            "range": "± 110",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first pluginop",
+            "value": 13515821,
+            "range": "± 693261",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "macro simple",
+            "value": 6628502,
+            "range": "± 590096",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "max-data send and receive",
+            "value": 341,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "max-data wasm send and receive",
+            "value": 9428,
+            "range": "± 248",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "super-frame send and receive",
+            "value": 15402,
+            "range": "± 817",
             "unit": "ns/iter"
           }
         ]
