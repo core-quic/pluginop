@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1680082901159,
+  "lastUpdate": 1680172497071,
   "repoUrl": "https://github.com/qdeconinck/pluginop",
   "entries": {
     "Pluginop benchmarks": [
@@ -989,6 +989,90 @@ window.BENCHMARK_DATA = {
             "name": "super-frame",
             "value": 11453,
             "range": "± 551",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7014a4022dbc9c4319331dc31ce9b62c9f704446",
+          "message": "Merge pull request #22 from qdeconinck/store-per-plugin\n\nStore is per-plugin",
+          "timestamp": "2023-03-30T12:28:09+02:00",
+          "tree_id": "7ef33431c090eb9a23d48e081bfec02141e4cc9c",
+          "url": "https://github.com/qdeconinck/pluginop/commit/7014a4022dbc9c4319331dc31ce9b62c9f704446"
+        },
+        "date": 1680172496114,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "run and return",
+            "value": 153,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "memory allocation",
+            "value": 6583545,
+            "range": "± 1646725",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "static memory",
+            "value": 4355,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inputs support",
+            "value": 4973,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "input outputs",
+            "value": 6024,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "increase-max-data",
+            "value": 4471,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first pluginop",
+            "value": 11265392,
+            "range": "± 511563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "macro simple",
+            "value": 5661990,
+            "range": "± 241538",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "max-data",
+            "value": 279,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "super-frame",
+            "value": 11832,
+            "range": "± 549",
             "unit": "ns/iter"
           }
         ]
