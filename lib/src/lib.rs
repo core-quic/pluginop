@@ -4,7 +4,7 @@ use std::{
 };
 
 use api::ConnectionToPlugin;
-use common::PluginVal;
+use common::{Anchor, PluginVal};
 use handler::PluginHandler;
 use plugin::Env;
 use pluginop_common::{quic, PluginInputType, PluginOp, PluginOutputType};
@@ -19,6 +19,17 @@ pub struct POCode {
     pre: Option<PluginFunction>,
     replace: Option<PluginFunction>,
     post: Option<PluginFunction>,
+}
+
+impl POCode {
+    /// Get the underlying PluginFunction associated to the provided `Anchor`.
+    pub(crate) fn get(&self, a: Anchor) -> Option<&PluginFunction> {
+        match a {
+            Anchor::Pre => self.pre.as_ref(),
+            Anchor::Replace => self.replace.as_ref(),
+            Anchor::Post => self.post.as_ref(),
+        }
+    }
 }
 
 pub struct PluginizableConnection<CTP: ConnectionToPlugin> {
@@ -90,12 +101,25 @@ impl<T> DerefMut for ParentReferencer<T> {
 /// An error that may happen during the operations of this library.
 #[derive(Clone, Debug)]
 pub enum Error {
+    /// An internal error occurred.
+    ///
+    /// Feel free to open an issue when encountering such errors.
     InternalError(String),
+
+    /// The plugin cannot be loaded.
     PluginLoadingError(String),
+
+    /// A runtime error raised by the virtual machine subsystem.
     RuntimeError(RuntimeError),
+
+    /// No default provided for the related `PluginOp`.
     NoDefault(PluginOp),
-    OutputConversionError(String),
+
+    /// The plugin returned a non-zero error code.
     OperationError(i64),
+
+    /// There is no plugin function for the requested `PluginOp`.
+    NoPluginFunction,
 }
 
 pub enum ProtoOpFunc<CTP: ConnectionToPlugin> {
@@ -106,7 +130,7 @@ pub enum ProtoOpFunc<CTP: ConnectionToPlugin> {
 /// with the help of the `PluginHandler` if some information should not be directly
 /// accessible to the plugins.
 pub trait FromWithPH<T, CTP: ConnectionToPlugin>: Sized {
-    fn from_with_ph(value: T, ph: &PluginHandler<CTP>) -> Self;
+    fn from_with_ph(value: T, ph: &mut PluginHandler<CTP>) -> Self;
 }
 
 // For the following, a bit of explanation is required.
@@ -125,7 +149,7 @@ pub trait FromWithPH<T, CTP: ConnectionToPlugin>: Sized {
 macro_rules! impl_from_with_ph {
     ($e:ident, $t:ty) => {
         impl<CTP: ConnectionToPlugin> FromWithPH<$t, CTP> for $e {
-            fn from_with_ph(v: $t, _: &PluginHandler<CTP>) -> Self {
+            fn from_with_ph(v: $t, _: &mut PluginHandler<CTP>) -> Self {
                 v.into()
             }
         }
@@ -152,33 +176,33 @@ impl_from_with_ph!(PluginVal, quic::KPacketNumberSpace);
 impl_from_with_ph!(PluginVal, quic::PacketType);
 
 impl<CTP: ConnectionToPlugin> FromWithPH<Vec<u8>, CTP> for PluginVal {
-    fn from_with_ph(value: Vec<u8>, ph: &PluginHandler<CTP>) -> Self {
+    fn from_with_ph(value: Vec<u8>, ph: &mut PluginHandler<CTP>) -> Self {
         PluginVal::Bytes(ph.add_bytes_content(value.into()))
     }
 }
 
 /// The reflexive trait of `FromWithPH`.
 pub trait IntoWithPH<T, CTP: ConnectionToPlugin>: Sized {
-    fn into_with_ph(self, ph: &PluginHandler<CTP>) -> T;
+    fn into_with_ph(self, ph: &mut PluginHandler<CTP>) -> T;
 }
 
 impl<T, CTP: ConnectionToPlugin> IntoWithPH<PluginVal, CTP> for T
 where
     PluginVal: FromWithPH<T, CTP>,
 {
-    fn into_with_ph(self, ph: &PluginHandler<CTP>) -> PluginVal {
+    fn into_with_ph(self, ph: &mut PluginHandler<CTP>) -> PluginVal {
         PluginVal::from_with_ph(self, ph)
     }
 }
 
 impl<CTP: ConnectionToPlugin> FromWithPH<octets::OctetsPtr, CTP> for PluginVal {
-    fn from_with_ph(value: octets::OctetsPtr, ph: &PluginHandler<CTP>) -> Self {
+    fn from_with_ph(value: octets::OctetsPtr, ph: &mut PluginHandler<CTP>) -> Self {
         PluginVal::Bytes(ph.add_bytes_content(value.into()))
     }
 }
 
 impl<CTP: ConnectionToPlugin> FromWithPH<octets::OctetsMutPtr, CTP> for PluginVal {
-    fn from_with_ph(value: octets::OctetsMutPtr, ph: &PluginHandler<CTP>) -> Self {
+    fn from_with_ph(value: octets::OctetsMutPtr, ph: &mut PluginHandler<CTP>) -> Self {
         PluginVal::Bytes(ph.add_bytes_content(value.into()))
     }
 }

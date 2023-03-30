@@ -232,12 +232,14 @@ fn get_out_block(
             use pluginop::TryIntoWithPH;
             use pluginop::octets::OctetsMutPtr;
             use pluginop::octets::OctetsPtr;
-            let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph());
+            let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph_mut());
             if let Some(ph) = ph.filter(|ph| ph.provides(& #po, pluginop::common::Anchor::Replace)) {
+                let params = #param_code;
                 let res = ph.call(
                     & #po,
-                    #param_code,
+                    params,
                 );
+                ph.clear_bytes_content();
 
                 #ret_block
             } else {
@@ -291,12 +293,14 @@ fn get_out_param_block(
             use pluginop::TryIntoWithPH;
             use pluginop::octets::OctetsMutPtr;
             use pluginop::octets::OctetsPtr;
-            let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph());
+            let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph_mut());
             if let Some(ph) = ph.filter(|ph| ph.provides(& #po(#param), pluginop::common::Anchor::Replace)) {
+                let params = #param_code;
                 let res = ph.call(
                     & #po(#param),
-                    #param_code,
+                    params,
                 );
+                ph.clear_bytes_content();
 
                 #ret_block
             } else {

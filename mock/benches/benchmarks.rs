@@ -35,13 +35,13 @@ fn memory_allocation_bench() {
     assert!(ok.is_ok());
     let (po, a) = PluginOp::from_name("check_data");
     assert!(pcd.get_ph().provides(&po, a));
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     let res = ph.call(&po, &[]);
     assert!(res.is_ok());
     assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
     let (po2, a2) = PluginOp::from_name("free_data");
     assert!(pcd.get_ph().provides(&po2, a2));
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     let _ = ph.call(&po2, &[]);
     let res = ph.call(&po, &[]);
     assert!(res.is_err());
@@ -55,22 +55,22 @@ fn memory_allocation_bench() {
 fn static_memory(pcd: &mut PluginizableConnectionDummy) {
     let (po, a) = PluginOp::from_name("get_mult_value");
     assert!(pcd.get_ph().provides(&po, a));
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     let res = ph.call(&po, &[]);
     assert!(res.is_ok());
     assert_eq!(*res.unwrap(), [PluginVal::I64(0)]);
     let (po2, a2) = PluginOp::from_name("set_values");
     assert!(pcd.get_ph().provides(&po2, a2));
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     let res = ph.call(&po2, &[(2 as i32).into(), (3 as i32).into()]);
     assert!(res.is_ok());
     let res = ph.call(&po, &[]);
     assert!(res.is_ok());
     assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     let res = ph.call(&po2, &[(0 as i32).into(), (0 as i32).into()]);
     assert!(res.is_ok());
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     let res = ph.call(&po, &[]);
     assert!(res.is_ok());
     assert_eq!(*res.unwrap(), [PluginVal::I64(0)]);
@@ -79,7 +79,7 @@ fn static_memory(pcd: &mut PluginizableConnectionDummy) {
 fn input_outputs(pcd: &mut PluginizableConnectionDummy) {
     let (po, a) = PluginOp::from_name("get_calc_value");
     assert!(pcd.get_ph().provides(&po, a));
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     let res = ph.call(&po, &[]);
     assert!(res.is_ok());
     assert_eq!(
@@ -93,7 +93,7 @@ fn input_outputs(pcd: &mut PluginizableConnectionDummy) {
     );
     let (po2, a2) = PluginOp::from_name("set_values");
     assert!(pcd.get_ph().provides(&po2, a2));
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     let res = ph.call(&po2, &[(12 as i32).into(), (3 as i32).into()]);
     assert!(res.is_ok());
     assert_eq!(*res.unwrap(), []);
@@ -108,11 +108,11 @@ fn input_outputs(pcd: &mut PluginizableConnectionDummy) {
             PluginVal::I32(4)
         ]
     );
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     let res = ph.call(&po2, &[(0 as i32).into(), (1 as i32).into()]);
     assert!(res.is_ok());
     assert_eq!(*res.unwrap(), []);
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     let res = ph.call(&po, &[]);
     assert!(res.is_ok());
     assert_eq!(
@@ -136,7 +136,7 @@ fn increase_max_data(pcd: &mut PluginizableConnectionDummy) {
     let md_frame = MaxDataFrame {
         maximum_data: new_value,
     };
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     let res = ph.call(&po, &[QVal::Frame(Frame::MaxData(md_frame)).into()]);
     assert!(res.is_ok());
     assert_eq!(*res.unwrap(), []);
@@ -145,7 +145,7 @@ fn increase_max_data(pcd: &mut PluginizableConnectionDummy) {
     let md_frame = MaxDataFrame {
         maximum_data: new_value,
     };
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     let res = ph.call(&po, &[QVal::Frame(Frame::MaxData(md_frame)).into()]);
     assert!(res.is_ok());
     assert_eq!(*res.unwrap(), []);
@@ -221,7 +221,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     assert!(ok.is_ok());
     let (po, a) = PluginOp::from_name("simple_call");
     assert!(pcd.get_ph().provides(&po, a));
-    let ph = pcd.get_ph();
+    let ph = pcd.get_ph_mut();
     c.bench_function("run and return", |b| b.iter(|| ph.call(&po, &[])));
 
     // Second test

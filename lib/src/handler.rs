@@ -1,5 +1,4 @@
 use std::{
-    cell::UnsafeCell,
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
     path::PathBuf,
@@ -11,18 +10,17 @@ use wasmer::{Engine, Exports, FunctionEnv, Store};
 use wasmer_compiler_singlepass::Singlepass;
 
 use crate::{
-    api::{get_imports_with, CTPError, ConnectionToPlugin},
-    plugin::{create_env, BytesContent, Env, Plugin},
-    Error, PluginFunction, PluginizableConnection,
+    api::{CTPError, ConnectionToPlugin},
+    plugin::{BytesContent, Env, Plugin},
+    Error, PluginizableConnection,
 };
 
 use pluginop_rawptr::RawMutPtr;
 
 /// Get a store for plugins. Note that this function should be called once for a host.
-fn create_store() -> Store {
+fn create_engine() -> Engine {
     let compiler = Singlepass::new();
-    let engine: Engine = compiler.into();
-    Store::new(engine)
+    compiler.into()
 }
 
 /// A pinned `Vec` of plugins.
@@ -48,24 +46,19 @@ impl<CTP: ConnectionToPlugin> DerefMut for PluginArray<CTP> {
 impl<CTP: ConnectionToPlugin> PluginArray<CTP> {
     /// Returns `true` iif one of the plugins provides an implementation for the requested `po`.
     fn provides(&self, po: &PluginOp, anchor: Anchor) -> bool {
-        self.iter().any(|p| p.get_func(po, anchor).is_some())
+        self.iter().any(|p| p.provides(po, anchor))
     }
 
     /// Returns the first plugin that provides an implementation for `po` with the implementing
     /// function, or `None` if there is not.
-    fn get_first_plugin(&self, po: &PluginOp) -> Option<(&Plugin<CTP>, &PluginFunction)> {
-        for p in self.iter() {
-            if let Some(func) = p.get_func(po, Anchor::Replace) {
-                return Some((p, func));
-            }
-        }
-        None
+    fn get_first_plugin(&mut self, po: &PluginOp) -> Option<&mut Plugin<CTP>> {
+        self.iter_mut().find(|p| p.provides(po, Anchor::Replace))
     }
 }
 
 pub struct PluginHandler<CTP: ConnectionToPlugin> {
-    /// The store that served to instantiate plugins.
-    store: UnsafeCell<Store>,
+    /// The engine used to instantiate plugins.
+    engine: Engine,
     /// A pointer to the serving session. It can stay null if no plugin is inserted.
     conn: RawMutPtr<PluginizableConnection<CTP>>,
     /// Function creating an `Imports`.
@@ -73,7 +66,7 @@ pub struct PluginHandler<CTP: ConnectionToPlugin> {
     /// The actual container of the plugins.
     plugins: PluginArray<CTP>,
     /// Bytes contents that will be passed to potential plugins.
-    bytes_contents: UnsafeCell<Vec<BytesContent>>,
+    bytes_contents: Vec<BytesContent>,
     /// Registrations made by the plugins.
     registrations: Vec<Registration>,
     /// Force this structure to be pinned.
@@ -83,7 +76,6 @@ pub struct PluginHandler<CTP: ConnectionToPlugin> {
 impl<CTP: ConnectionToPlugin> std::fmt::Debug for PluginHandler<CTP> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PluginHandler")
-            .field("store", &self.store)
             .field("_pin", &self._pin)
             .finish()
     }
@@ -120,11 +112,11 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
     /// customize the behavior of a connection.
     pub fn new(exports_func: fn(&mut Store, &FunctionEnv<Env<CTP>>) -> Exports) -> Self {
         Self {
-            store: UnsafeCell::new(create_store()),
+            engine: create_engine(),
             conn: RawMutPtr::null(),
             exports_func,
             plugins: PluginArray { array: Vec::new() },
-            bytes_contents: UnsafeCell::new(Vec::new()),
+            bytes_contents: Vec::new(),
             registrations: Vec::new(),
             _pin: PhantomPinned,
         }
@@ -158,18 +150,13 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
                     .to_string(),
             ));
         }
-        let ph_ptr = self as *mut _;
-        let store = unsafe { &mut *self.store.get() };
-        let env = FunctionEnv::new(store, create_env(RawMutPtr::new(ph_ptr)));
-        let exports = (self.exports_func)(store, &env);
-        let imports = get_imports_with(exports, store, &env);
-        let plugin = Plugin::new(plugin_fname, store, env, &imports)?;
+        let plugin = Plugin::new(plugin_fname, self)?;
         self.plugins.push(plugin);
         // Now the plugin is at its definitive area in memory, so we can initialize it.
         self.plugins
             .last_mut()
             .ok_or(Error::PluginLoadingError("PluginNotInserted".to_string()))?
-            .initialize(unsafe { &mut *self.store.get() })
+            .initialize()
             .map_err(|e| Error::PluginLoadingError(format!("{:?}", e)))
     }
 
@@ -198,12 +185,11 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
     }
 
     /// Sets bytes content.
-    pub fn add_bytes_content(&self, bc: BytesContent) -> Bytes {
-        let bytes_contents = unsafe { &mut *self.bytes_contents.get() };
-        let tag = bytes_contents.len() as u64;
+    pub fn add_bytes_content(&mut self, bc: BytesContent) -> Bytes {
+        let tag = self.bytes_contents.len() as u64;
         let max_read_len = bc.read_len() as u64;
         let max_write_len = bc.write_len() as u64;
-        bytes_contents.push(bc);
+        self.bytes_contents.push(bc);
         Bytes {
             tag,
             max_read_len,
@@ -211,13 +197,16 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         }
     }
 
+    pub fn clear_bytes_content(&mut self) {
+        self.bytes_contents.clear();
+    }
+
     /// Gets a mutable reference on the `BytesContent` with tag `tag`.
     pub(crate) fn get_mut_bytes_content(
         &mut self,
         tag: usize,
     ) -> Result<&mut BytesContent, CTPError> {
-        let bytes_contents = self.bytes_contents.get_mut();
-        bytes_contents.get_mut(tag).ok_or(CTPError::BadBytes)
+        self.bytes_contents.get_mut(tag).ok_or(CTPError::BadBytes)
     }
 
     /// Registers some plugin content.
@@ -229,23 +218,33 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         &self.registrations
     }
 
+    pub(crate) fn get_cloned_engine(&self) -> Engine {
+        self.engine.clone()
+    }
+
+    pub(crate) fn get_export_func(&self) -> fn(&mut Store, &FunctionEnv<Env<CTP>>) -> Exports {
+        self.exports_func
+    }
+
     /// Invokes the protocol operation `po` and runs its anchors.
     fn call_internal(
-        &self,
+        &mut self,
         pod: Option<&&ProtocolOperationDefault>,
         po: &PluginOp,
         params: &[PluginVal],
     ) -> Result<Vec<PluginVal>, Error> {
         // PRE part
-        for p in self.plugins.iter() {
-            if let Some(func) = p.get_func(po, Anchor::Pre) {
-                p.call(unsafe { &mut *self.store.get() }, func, params)?;
-            }
+        for p in self
+            .plugins
+            .iter_mut()
+            .filter(|p| p.provides(po, Anchor::Pre))
+        {
+            p.call(po, Anchor::Pre, params)?;
         }
 
         // REPLACE part
         let res = match self.plugins.get_first_plugin(po) {
-            Some((p, func)) => p.call(unsafe { &mut *self.store.get() }, func, params)?,
+            Some(p) => p.call(po, Anchor::Replace, params)?,
             None => {
                 match pod {
                     Some(_pod) => {
@@ -268,20 +267,19 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         };
 
         // POST part
-        for p in self.plugins.iter() {
-            if let Some(func) = p.get_func(po, Anchor::Post) {
-                p.call(unsafe { &mut *self.store.get() }, func, params)?;
-            }
+        for p in self
+            .plugins
+            .iter_mut()
+            .filter(|p| p.provides(po, Anchor::Post))
+        {
+            p.call(po, Anchor::Post, params)?;
         }
-
-        // If we had bytes contents, clear them now.
-        unsafe { &mut *self.bytes_contents.get() }.clear();
 
         Ok(res)
     }
 
     /// Invokes the protocol operation `po` and runs its anchors.
-    pub fn call(&self, po: &PluginOp, params: &[PluginVal]) -> Result<Vec<PluginVal>, Error> {
+    pub fn call(&mut self, po: &PluginOp, params: &[PluginVal]) -> Result<Vec<PluginVal>, Error> {
         // trace!("Calling protocol operation {:?}", po);
 
         // TODO
