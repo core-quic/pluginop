@@ -14,12 +14,12 @@ use log::{error, warn};
 use pluginop_common::{Anchor, PluginOp, PluginVal};
 use pluginop_octets::{OctetsMutPtr, OctetsPtr};
 use pluginop_rawptr::RawMutPtr;
-use wasmer::{FunctionEnv, Imports, Instance, Module, Store};
+use wasmer::{FunctionEnv, Instance, Module, Store};
 
 use crate::{
-    api::{CTPError, ConnectionToPlugin},
+    api::{get_imports_with, CTPError, ConnectionToPlugin},
     handler::{Permission, PluginHandler},
-    Error, POCode, PluginFunction,
+    Error, POCode,
 };
 
 /// An array of plugin-compatible values.
@@ -293,6 +293,8 @@ where
 pub(crate) struct Plugin<CTP: ConnectionToPlugin> {
     /// The actual WASM instance.
     instance: Arc<Pin<Box<Instance>>>,
+    /// The store in which the plugin operates.
+    store: Store,
     // The environment accessible to plugins.
     env: FunctionEnv<Env<CTP>>,
     /// A collection holding the plugin functions contained in the instance.
@@ -303,15 +305,15 @@ pub(crate) struct Plugin<CTP: ConnectionToPlugin> {
 
 impl<CTP: ConnectionToPlugin> Plugin<CTP> {
     /// Creates a new `Plugin` instance.
-    pub fn new(
-        plugin_fname: &PathBuf,
-        store: &mut Store,
-        env: FunctionEnv<Env<CTP>>,
-        imports: &Imports,
-    ) -> Result<Self, Error> {
+    pub fn new(plugin_fname: &PathBuf, ph: &PluginHandler<CTP>) -> Result<Self, Error> {
         match std::fs::read(plugin_fname) {
             Ok(wasm) => {
-                let module = match Module::from_binary(store, &wasm) {
+                let ph_ptr = ph as *const _ as *mut _;
+                let mut store = Store::new(ph.get_cloned_engine());
+                let env = FunctionEnv::new(&mut store, create_env(RawMutPtr::new(ph_ptr)));
+                let exports = (ph.get_export_func())(&mut store, &env);
+                let imports = get_imports_with(exports, &mut store, &env);
+                let module = match Module::from_binary(&store, &wasm) {
                     Ok(m) => m,
                     Err(e) => {
                         error!("failed WASM compilation: {}", e);
@@ -319,7 +321,7 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
                     }
                 };
 
-                match Instance::new(store, &module, imports) {
+                match Instance::new(&mut store, &module, &imports) {
                     Ok(instance) => {
                         let mut plugin_state = [0u8; 4];
 
@@ -328,17 +330,18 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
                         }
 
                         // XXX We could update the permissions later.
-                        let permissions = &mut env.as_mut(store).permissions;
+                        let permissions = &mut env.as_mut(&mut store).permissions;
                         permissions.insert(Permission::Output);
                         permissions.insert(Permission::Opaque);
                         permissions.insert(Permission::ConnectionAccess);
                         permissions.insert(Permission::WriteBuffer);
                         permissions.insert(Permission::ReadBuffer);
 
-                        let pocodes = Plugin::<CTP>::get_pocodes(&instance, store);
+                        let pocodes = Plugin::<CTP>::get_pocodes(&instance, &mut store);
 
                         Ok(Plugin {
                             instance: Arc::new(Box::pin(instance)),
+                            store,
                             env,
                             pocodes: Box::pin(pocodes),
                             plugin_state: u32::from_be_bytes(plugin_state),
@@ -388,42 +391,38 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
         pocodes
     }
 
-    /// Returns the function providing code for the requested protocol operation and anchor.
-    pub(crate) fn get_func(&self, po: &PluginOp, anchor: Anchor) -> Option<&PluginFunction> {
-        match self.pocodes.get(po) {
-            Some(poc) => match anchor {
-                Anchor::Pre => poc.pre.as_ref(),
-                Anchor::Replace => poc.replace.as_ref(),
-                Anchor::Post => poc.post.as_ref(),
-            },
-            None => None,
-        }
+    /// Returns whether this plugin provides behavior for the requested
+    /// `PluginOp` and `Anchor`.
+    pub(crate) fn provides(&self, po: &PluginOp, anchor: Anchor) -> bool {
+        self.pocodes
+            .get(po)
+            .and_then(|poc| poc.get(anchor))
+            .is_some()
     }
 
     /// Initializes the plugin.
-    pub(crate) fn initialize(&self, store: &mut Store) -> Result<(), Error> {
-        let env_mut = self.env.as_mut(store);
+    pub(crate) fn initialize(&mut self) -> Result<(), Error> {
+        let env_mut = self.env.as_mut(&mut self.store);
         env_mut.initialized = true;
 
         // Set now the instance backpointer.
         env_mut.instance = Arc::<Pin<Box<Instance>>>::downgrade(&self.instance);
 
         // And call a potential `init` method provided by the plugin.
-        let po = PluginOp::Init;
-        if let Some(func) = self.get_func(&po, Anchor::Replace) {
-            self.call(store, func, &[])?;
+        match self.call(&PluginOp::Init, Anchor::Replace, &[]) {
+            Ok(_) | Err(Error::NoPluginFunction) => Ok(()),
+            Err(e) => Err(e),
         }
-        Ok(())
     }
 
     /// Invokes the function called `function_name` with provided `params`.
     pub fn call(
-        &self,
-        store: &mut Store,
-        func: &PluginFunction,
+        &mut self,
+        po: &PluginOp,
+        anchor: Anchor,
         params: &[PluginVal],
     ) -> Result<Vec<PluginVal>, Error> {
-        let env_mut = self.env.as_mut(store);
+        let env_mut = self.env.as_mut(&mut self.store);
         // Before launching any call, we should sanitize the running `env`.
         env_mut.sanitize();
 
@@ -431,9 +430,19 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
             env_mut.inputs.push(*p);
         }
 
+        let func = match self.pocodes.get(po) {
+            Some(poc) => match anchor {
+                Anchor::Pre => poc.pre.as_ref(),
+                Anchor::Replace => poc.replace.as_ref(),
+                Anchor::Post => poc.post.as_ref(),
+            },
+            None => None,
+        };
+
+        let func = func.ok_or(Error::NoPluginFunction)?;
         // debug!("Calling PO with param {:?}", params);
-        match func.call(store, self.plugin_state) {
-            Ok(res) if res == 0 => Ok((*self.env.as_ref(store).outputs).clone()),
+        match func.call(&mut self.store, self.plugin_state) {
+            Ok(res) if res == 0 => Ok((*self.env.as_ref(&self.store).outputs).clone()),
             Ok(err) => Err(Error::OperationError(err)),
             Err(re) => Err(Error::RuntimeError(re)),
         }

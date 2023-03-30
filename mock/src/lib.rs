@@ -406,7 +406,7 @@ mod tests {
         assert!(ok.is_ok());
         let (po, a) = PluginOp::from_name("simple_call");
         assert!(pcd.0.get_ph().provides(&po, a));
-        let ph = pcd.0.get_ph();
+        let ph = pcd.0.get_ph_mut();
         let res = ph.call(&po, &[]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), []);
@@ -421,13 +421,13 @@ mod tests {
         assert!(ok.is_ok());
         let (po, a) = PluginOp::from_name("check_data");
         assert!(pcd.get_ph().provides(&po, a));
-        let ph = pcd.0.get_ph();
+        let ph = pcd.0.get_ph_mut();
         let res = ph.call(&po, &[]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
         let (po2, a2) = PluginOp::from_name("free_data");
         assert!(pcd.get_ph().provides(&po2, a2));
-        let ph = pcd.0.get_ph();
+        let ph = pcd.0.get_ph_mut();
         let _ = ph.call(&po2, &[]);
         let res = ph.call(&po, &[]);
         assert!(res.is_err());
@@ -446,24 +446,24 @@ mod tests {
         assert!(ok.is_ok());
         let (po, a) = PluginOp::from_name("get_mult_value");
         assert!(pcd.get_ph().provides(&po, a));
-        let ph = pcd.get_ph();
+        let ph = pcd.get_ph_mut();
         let res = ph.call(&po, &[]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), [PluginVal::I64(0)]);
         let (po2, a2) = PluginOp::from_name("set_values");
         assert!(pcd.get_ph().provides(&po2, a2));
-        let ph = pcd.get_ph();
+        let ph = pcd.get_ph_mut();
         let res = ph.call(&po2, &[(2 as i32).into(), (3 as i32).into()]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), []);
         let res = ph.call(&po, &[]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
-        let ph = pcd.get_ph();
+        let ph = pcd.get_ph_mut();
         let res = ph.call(&po2, &[(0 as i32).into(), (0 as i32).into()]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), []);
-        let ph = pcd.get_ph();
+        let ph = pcd.get_ph_mut();
         let res = ph.call(&po, &[]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), [PluginVal::I64(0)]);
@@ -488,7 +488,7 @@ mod tests {
         assert!(ok.is_ok());
         let (po, a) = PluginOp::from_name("get_calc_value");
         assert!(pcd.get_ph().provides(&po, a));
-        let ph = pcd.get_ph();
+        let ph = pcd.get_ph_mut();
         let res = ph.call(&po, &[]);
         assert!(res.is_ok());
         assert_eq!(
@@ -502,7 +502,7 @@ mod tests {
         );
         let (po2, a2) = PluginOp::from_name("set_values");
         assert!(pcd.get_ph().provides(&po2, a2));
-        let ph = pcd.get_ph();
+        let ph = pcd.get_ph_mut();
         let res = ph.call(&po2, &[(12 as i32).into(), (3 as i32).into()]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), []);
@@ -517,11 +517,11 @@ mod tests {
                 PluginVal::I32(4)
             ]
         );
-        let ph = pcd.get_ph();
+        let ph = pcd.get_ph_mut();
         let res = ph.call(&po2, &[(0 as i32).into(), (1 as i32).into()]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), []);
-        let ph = pcd.get_ph();
+        let ph = pcd.get_ph_mut();
         let res = ph.call(&po, &[]);
         assert!(res.is_ok());
         assert_eq!(
@@ -549,7 +549,7 @@ mod tests {
         let md_frame = MaxDataFrame {
             maximum_data: new_value,
         };
-        let ph = pcd.get_ph();
+        let ph = pcd.get_ph_mut();
         let res = ph.call(&po, &[QVal::Frame(Frame::MaxData(md_frame)).into()]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), []);
@@ -558,7 +558,7 @@ mod tests {
         let md_frame = MaxDataFrame {
             maximum_data: new_value,
         };
-        let ph = pcd.get_ph();
+        let ph = pcd.get_ph_mut();
         let res = ph.call(&po, &[QVal::Frame(Frame::MaxData(md_frame)).into()]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), []);
