@@ -628,6 +628,24 @@ mod tests {
     }
 
     #[test]
+    fn max_data_wasm() {
+        let mut pcd =
+            PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
+        let path = "../tests/max-data-frame/max_data_frame.wasm".to_string();
+        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        assert!(ok.is_ok());
+        let mut orig_buf = [0; 1350];
+        let mut buf = OctetsMut::with_slice(&mut orig_buf);
+        let w = pcd.send_pkt(&mut buf, Some(false));
+        assert_eq!(w, 3);
+        assert_eq!(&[0x10, 0x60, 0x00], &orig_buf[..3]);
+        let mut buf = Octets::with_slice(&mut orig_buf[..3]);
+        let res = pcd.recv_pkt(&mut buf, Instant::now());
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), 3);
+    }
+
+    #[test]
     fn super_frame() {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);

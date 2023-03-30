@@ -27,10 +27,17 @@ fn exports_func_external_test(
     exports
 }
 
+// Normal user.
+static BASE: &'static str = "..";
+// Root user.
+// static BASE: &'static str = "/Users/qdeconinck/code/pluginop";
+
 fn memory_allocation_bench() {
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    let path = "../tests/memory-allocation/memory_allocation.wasm".to_string();
+    let path = [BASE, "/tests/memory-allocation/memory_allocation.wasm"]
+        .join("")
+        .to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok.is_ok());
     let (po, a) = PluginOp::from_name("check_data");
@@ -160,7 +167,9 @@ fn first_pluginop() {
     pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 2000 }));
     assert_eq!(pcd.conn.max_tx_data, 2000);
     // Fix this with the plugin.
-    let path = "../tests/increase-max-data/increase_max_data.wasm".to_string();
+    let path = [BASE, "/tests/increase-max-data/increase_max_data.wasm"]
+        .join("")
+        .to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok.is_ok());
     pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 4000 }));
@@ -177,7 +186,9 @@ fn macro_simple() {
         Duration::from_millis(10),
         Instant::now(),
     );
-    let path = "../tests/macro-simple/macro_simple.wasm".to_string();
+    let path = [BASE, "/tests/macro-simple/macro_simple.wasm"]
+        .join("")
+        .to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok.is_ok());
     pcd.update_rtt(
@@ -216,7 +227,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     // First test
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    let path = "../tests/simple-wasm/simple_wasm.wasm".to_string();
+
+    let path = [BASE, "/tests/simple-wasm/simple_wasm.wasm"]
+        .join("")
+        .to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok.is_ok());
     let (po, a) = PluginOp::from_name("simple_call");
@@ -232,7 +246,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Third test
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    let path = "../tests/static-memory/static_memory.wasm".to_string();
+    let path = [BASE, "/tests/static-memory/static_memory.wasm"]
+        .join("")
+        .to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok.is_ok());
     c.bench_function("static memory", |b| b.iter(|| static_memory(&mut pcd)));
@@ -240,7 +256,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Fourth test
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    let path = "../tests/inputs-support/inputs_support.wasm".to_string();
+    let path = [BASE, "/tests/inputs-support/inputs_support.wasm"]
+        .join("")
+        .to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok.is_ok());
     c.bench_function("inputs support", |b| b.iter(|| static_memory(&mut pcd)));
@@ -248,7 +266,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Fifth test
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    let path = "../tests/input-outputs/input_outputs.wasm".to_string();
+    let path = [BASE, "/tests/input-outputs/input_outputs.wasm"]
+        .join("")
+        .to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok.is_ok());
     c.bench_function("input outputs", |b| b.iter(|| input_outputs(&mut pcd)));
@@ -256,7 +276,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Sixth test
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    let path = "../tests/increase-max-data/increase_max_data.wasm".to_string();
+    let path = [BASE, "/tests/increase-max-data/increase_max_data.wasm"]
+        .join("")
+        .to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok.is_ok());
     c.bench_function("increase-max-data", |b| {
@@ -269,7 +291,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Eigth test
     c.bench_function("macro simple", |b| b.iter(|| macro_simple()));
 
-    // Ninth and tenth test.
+    // Ninth, tenth and eleventh tests.
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     pcd.get_ph_mut()
@@ -283,14 +305,30 @@ fn criterion_benchmark(c: &mut Criterion) {
             ),
         ));
     let mut orig_buf = [0; 1350];
-    c.bench_function("max-data", |b| b.iter(|| max_data(&mut pcd, &mut orig_buf)));
+    c.bench_function("max-data send and receive", |b| {
+        b.iter(|| max_data(&mut pcd, &mut orig_buf))
+    });
+    // The exact same behavior, but with a WASM plugin.
+    let mut pcd =
+        PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
+    let path = [BASE, "/tests/max-data-frame/max_data_frame.wasm"]
+        .join("")
+        .to_string();
+    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+    assert!(ok.is_ok());
+    c.bench_function("max-data wasm send and receive", |b| {
+        b.iter(|| max_data(&mut pcd, &mut orig_buf))
+    });
+
     // Now insert super-frame as a plugin. Recreate a new pcd to discard the previous registration.
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    let path = "../tests/super-frame/super_frame.wasm".to_string();
+    let path = [BASE, "/tests/super-frame/super_frame.wasm"]
+        .join("")
+        .to_string();
     let ok = pcd.get_ph_mut().insert_plugin(&path.into());
     assert!(ok.is_ok());
-    c.bench_function("super-frame", |b| {
+    c.bench_function("super-frame send and receive", |b| {
         b.iter(|| super_frame(&mut pcd, &mut orig_buf))
     });
 }
