@@ -2,7 +2,7 @@
 
 [![Test](https://github.com/qdeconinck/pluginop/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/qdeconinck/pluginop/actions/workflows/rust.yml?query=branch%main)
 [![Benchmark](https://github.com/qdeconinck/pluginop/actions/workflows/benchmark.yml/badge.svg?branch=main)](https://github.com/qdeconinck/pluginop/actions/workflows/benchmark.yml?query=branch%main)
-[![Test coverage](https://codecov.io/gh/qdeconinck/pluginop/branch/master/graph/badge.svg)](https://codecov.io/gh/qdeconinck/pluginop)
+[![Test coverage](https://codecov.io/gh/qdeconinck/pluginop/branch/main/graph/badge.svg?token=22VU1757X3)](https://codecov.io/gh/qdeconinck/pluginop)
 
 *One day, we will make the Intenet great again. In the meantime, we struggle with engineering problems.*
 
