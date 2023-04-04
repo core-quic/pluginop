@@ -4,7 +4,7 @@
 [![Benchmark](https://github.com/qdeconinck/pluginop/actions/workflows/benchmark.yml/badge.svg?branch=main)](https://github.com/qdeconinck/pluginop/actions/workflows/benchmark.yml?query=branch%main)
 [![Test coverage](https://codecov.io/gh/qdeconinck/pluginop/branch/main/graph/badge.svg?token=22VU1757X3)](https://codecov.io/gh/qdeconinck/pluginop)
 
-*One day, we will make the Intenet great again. In the meantime, we struggle with engineering problems.*
+*One day, we will make the Internet great again. In the meantime, we struggle with engineering problems.*
 
 PluginOp is a crate intending to make (Rust) network implementation seamlessly pluginizable.
 The project consists in several sub-crates:
