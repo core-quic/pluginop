@@ -164,6 +164,21 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         self.plugins.provides(po, anchor)
     }
 
+    /// Returns the first timeout event required by a plugin.
+    pub fn timeout(&self) -> Option<unix_time::Instant> {
+        self.plugins.iter().filter_map(|p| p.timeout()).min()
+    }
+
+    /// Calls potential timeouts that fired since the provided time.
+    ///
+    /// If there were not firing timers, this method does nothing.
+    pub fn on_timeout(&mut self, t: unix_time::Instant) -> Result<(), Error> {
+        for p in self.plugins.iter_mut() {
+            p.on_timeout(t)?;
+        }
+        Ok(())
+    }
+
     /// Gets an immutable reference to the serving connection.
     pub fn get_conn(&self) -> Option<&PluginizableConnection<CTP>> {
         if self.conn.is_null() {

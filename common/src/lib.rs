@@ -68,8 +68,11 @@ pub enum PluginOp {
     SetLossDetectionTimer,
     UpdateRtt,
 
-    // Plugin control operation, unspecified protocol operations called by the application.
+    /// Plugin control operation, unspecified protocol operations called by the application.
     PluginControl(u64),
+
+    /// Specific protocol operation when a plugin triggers some timers.
+    OnPluginTimeout(u64),
 
     Test,
 
@@ -180,6 +183,11 @@ impl PluginOp {
         } else if name.starts_with("plugin_control_") {
             match extract_po_param(name) {
                 Ok(val) => (PluginOp::PluginControl(val), anchor),
+                Err(e) => panic!("Invalid protocol operation name: {e}"),
+            }
+        } else if name.starts_with("on_plugin_timeout_") {
+            match extract_po_param(name) {
+                Ok(val) => (PluginOp::OnPluginTimeout(val), anchor),
                 Err(e) => panic!("Invalid protocol operation name: {e}"),
             }
         } else if name == "get_packet_to_send" {

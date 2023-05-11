@@ -15,6 +15,7 @@ pub use pluginop_common::Bytes;
 use pluginop_common::PluginVal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
+pub use std::time::Duration;
 pub use unix_time::Instant;
 
 /// The maximum size of a result, may be subject to future changes.
@@ -72,6 +73,11 @@ extern "C" {
     fn put_bytes_from_plugin(tag: u64, ptr: WASMPtr, len: WASMLen) -> i64;
     /* Register a parametrized protocol operation */
     fn register_from_plugin(ptr: WASMPtr, len: WASMLen) -> i64;
+    /* Set a custom timer */
+    fn set_timer_from_plugin(ts_ptr: WASMPtr, ts_len: WASMLen, id: u64, timer_id: u64)
+        -> APIResult;
+    /* Cancel the timer with the given id */
+    fn cancel_timer_from_plugin(id: u64) -> APIResult;
 
     // ----- TODOs -----
     /* Functions for the buffer to read */
@@ -123,16 +129,6 @@ extern "C" {
     fn get_time_from_plugin(res_ptr: WASMPtr, res_len: WASMLen);
     /* Generates a connection ID */
     fn generate_connection_id_from_plugin(res_ptr: WASMPtr, res_len: WASMLen) -> APIResult;
-    /* Set a custom timer */
-    fn set_timer_from_plugin(
-        ts_ptr: WASMPtr,
-        ts_len: WASMLen,
-        id: u64,
-        cb_ptr: WASMPtr,
-        cb_len: WASMLen,
-    ) -> u64;
-    /* Cancel the timer with the given id */
-    fn cancel_timer_from_plugin(id: u64);
 }
 
 #[repr(C)]
@@ -141,7 +137,7 @@ pub struct PluginEnv(WASMPtr);
 impl PluginEnv {
     /// Stores a new plugin output.
     pub fn save_output(&self, v: PluginVal) -> Result<()> {
-        let serialized_value = bincode::serialize(&v).expect("serialized value");
+        let serialized_value = bincode::serialize(&v).map_err(|_| Error::SerializeError)?;
         match unsafe {
             save_output_from_plugin(
                 serialized_value.as_ptr() as WASMPtr,
@@ -149,13 +145,13 @@ impl PluginEnv {
             )
         } {
             0 => Ok(()),
-            _ => Err(Error::SerializeError),
+            _ => Err(Error::APICallError),
         }
     }
 
     /// Stores a new plugin output.
     pub fn save_outputs(&self, v: &[PluginVal]) -> Result<()> {
-        let serialized_value = bincode::serialize(&v).expect("serialized value");
+        let serialized_value = bincode::serialize(&v).map_err(|_| Error::SerializeError)?;
         match unsafe {
             save_outputs_from_plugin(
                 serialized_value.as_ptr() as WASMPtr,
@@ -163,7 +159,7 @@ impl PluginEnv {
             )
         } {
             0 => Ok(()),
-            _ => Err(Error::SerializeError),
+            _ => Err(Error::APICallError),
         }
     }
 
@@ -334,12 +330,39 @@ impl PluginEnv {
     }
 
     pub fn register(&mut self, r: Registration) -> Result<()> {
-        let serialized = bincode::serialize(&r).expect("serialized field");
+        let serialized = bincode::serialize(&r).map_err(|_| Error::SerializeError)?;
         match unsafe {
             register_from_plugin(serialized.as_ptr() as WASMPtr, serialized.len() as WASMLen)
         } {
             0 => Ok(()),
-            _ => Err(Error::SerializeError),
+            _ => Err(Error::APICallError),
+        }
+    }
+
+    /// Set a timer at the provided time to call the given callback function with the
+    /// provided name.
+    ///
+    /// Returns the identifier to the timer event, as provided as argument.
+    pub fn set_timer(&mut self, ts: unix_time::Instant, id: u64, timer_id: u64) -> Result<()> {
+        let serialized_ts = bincode::serialize(&ts).map_err(|_| Error::SerializeError)?;
+        match unsafe {
+            set_timer_from_plugin(
+                serialized_ts.as_ptr() as WASMPtr,
+                serialized_ts.len() as WASMLen,
+                id,
+                timer_id,
+            )
+        } {
+            0 => Ok(()),
+            _ => Err(Error::APICallError),
+        }
+    }
+
+    /// Cancel the timer event having the identifier provided.
+    pub fn cancel_timer(&mut self, id: u64) -> Result<()> {
+        match unsafe { cancel_timer_from_plugin(id) } {
+            0 => Ok(()),
+            _ => Err(Error::APICallError),
         }
     }
 }
@@ -381,9 +404,9 @@ mod todo {
 
     use crate::{
         buffer_get_bytes_from_plugin, buffer_put_bytes_from_plugin, call_proto_op_from_plugin,
-        cancel_timer_from_plugin, generate_connection_id_from_plugin, get_current_time_from_plugin,
-        get_sent_packet_from_plugin, get_time_from_plugin, set_recovery_from_plugin,
-        set_timer_from_plugin, PluginEnv, SIZE,
+        generate_connection_id_from_plugin, get_current_time_from_plugin,
+        get_sent_packet_from_plugin, get_time_from_plugin, set_recovery_from_plugin, PluginEnv,
+        SIZE,
     };
 
     impl PluginEnv {
@@ -567,30 +590,6 @@ mod todo {
             let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
             let cid: ConnectionId = bincode::deserialize(slice).expect("no error");
             Some(cid)
-        }
-
-        /// Set a timer at the provided time to call the given callback function with the
-        /// provided name.
-        ///
-        /// Returns the identifier to the timer event, as provided as argument.
-        fn set_timer(ts: unix_time::Instant, id: u64, callback_name: &str) -> u64 {
-            let serialized_ts = bincode::serialize(&ts).expect("serialized ts");
-            let serialized_cb =
-                bincode::serialize(callback_name).expect("serialized callback_name");
-            unsafe {
-                set_timer_from_plugin(
-                    serialized_ts.as_ptr() as WASMPtr,
-                    serialized_ts.len() as WASMLen,
-                    id,
-                    serialized_cb.as_ptr() as WASMPtr,
-                    serialized_cb.len() as WASMLen,
-                )
-            }
-        }
-
-        /// Cancel the timer event having the identifier provided.
-        fn cancel_timer(id: u64) {
-            unsafe { cancel_timer_from_plugin(id) }
         }
     }
 }
