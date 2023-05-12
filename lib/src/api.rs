@@ -295,6 +295,9 @@ fn get_connection_from_plugin<CTP: ConnectionToPlugin>(
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked_mut() };
+    // SAFETY:  Also, this won't increase the memory of the plugin,
+    // as the guest will preallocate the memory.
+    let memory_slice = unsafe { std::slice::from_raw_parts_mut(memory_slice.as_mut_ptr(), memory_slice.len()) };
     let field = match bincode::deserialize_from(
         &memory_slice[field_ptr.offset() as usize..(field_ptr.offset() + field_len) as usize],
     ) {
@@ -343,6 +346,9 @@ fn set_connection_from_plugin<CTP: ConnectionToPlugin>(
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked() };
+    // SAFETY:  Also, this won't increase the memory of the plugin,
+    // as the guest will preallocate the memory.
+    let memory_slice = unsafe { std::slice::from_raw_parts(memory_slice.as_ptr(), memory_slice.len()) };
     let field = match bincode::deserialize_from(
         &memory_slice[field_ptr.offset() as usize..(field_ptr.offset() + field_len) as usize],
     ) {
@@ -388,6 +394,9 @@ fn get_bytes_from_plugin<CTP: ConnectionToPlugin>(
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked_mut() };
+    // SAFETY:  Also, this won't increase the memory of the plugin,
+    // as the guest will preallocate the memory.
+    let memory_slice = unsafe { std::slice::from_raw_parts_mut(memory_slice.as_mut_ptr(), memory_slice.len()) };
     let mem = &mut memory_slice[res_ptr.offset() as usize..(res_ptr.offset() + res_len) as usize];
     match env.data_mut().get_bytes(tag as usize, len as usize, mem) {
         Ok(w) => w as i64,
@@ -415,7 +424,10 @@ fn put_bytes_from_plugin<CTP: ConnectionToPlugin>(
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked_mut() };
-    let mem = &mut memory_slice[ptr.offset() as usize..(ptr.offset() + len) as usize];
+    // SAFETY:  Also, this won't increase the memory of the plugin,
+    // as the guest will preallocate the memory.
+    let memory_slice = unsafe { std::slice::from_raw_parts(memory_slice.as_ptr(), memory_slice.len()) };
+    let mem = &memory_slice[ptr.offset() as usize..(ptr.offset() + len) as usize];
     match env.data_mut().put_bytes(tag as usize, mem) {
         Ok(w) => w as i64,
         Err(_) => -3,
