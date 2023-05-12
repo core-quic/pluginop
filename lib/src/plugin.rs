@@ -125,6 +125,22 @@ impl From<OctetsMutPtr> for BytesContent {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TimerEvent {
+    /// When the timer event should take place.
+    at: unix_time::Instant,
+    /// The internal identifier. This identifier is unique within the plugin.
+    id: u64,
+    /// The timer identifier.
+    timer_id: u64,
+}
+
+impl TimerEvent {
+    pub fn new(at: unix_time::Instant, id: u64, timer_id: u64) -> Self {
+        Self { at, id, timer_id }
+    }
+}
+
 pub struct Env<CTP: ConnectionToPlugin> {
     /// The underlying plugin handler holding the plugin running this environment.
     ph: RawMutPtr<PluginHandler<CTP>>,
@@ -134,6 +150,8 @@ pub struct Env<CTP: ConnectionToPlugin> {
     permissions: BTreeSet<Permission>,
     /// Whether the associated plugin was initialized or not.
     initialized: bool,
+    /// The next timeout events to fire.
+    timer_events: Vec<TimerEvent>,
     /// Contains the inputs specific to the called operation.
     pub inputs: Pin<PluginValArray>,
     /// Enables a plugin to output more than one (serializable) value, as returning more than 1
@@ -150,6 +168,7 @@ pub(crate) fn create_env<CTP: ConnectionToPlugin>(ph: RawMutPtr<PluginHandler<CT
         instance: Weak::new(),
         permissions: BTreeSet::new(),
         initialized: false,
+        timer_events: Vec::new(),
         inputs: Pin::new(PluginValArray::default()),
         outputs: Pin::new(PluginValArray::default()),
         opaque_values: Box::pin(FnvHashMap::default()),
@@ -197,6 +216,46 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
         let bc = ph.get_mut_bytes_content(tag)?;
         // TODO: limit the length that plugins should be able to write.
         bc.extend_from(mem)
+    }
+
+    fn timeout(&self) -> Option<unix_time::Instant> {
+        self.timer_events.get(0).map(|r| r.at)
+    }
+
+    pub fn insert_timer_event(&mut self, v: TimerEvent) {
+        // If there is an element where the id is already there, update it.
+        if let Some(te) = self.timer_events.iter_mut().find(|te| te.id == v.id) {
+            *te = v;
+        } else {
+            self.timer_events.push(v);
+        }
+        // Always ensure the structure is sorted.
+        self.timer_events.sort();
+    }
+
+    pub fn pop_timer_event_if_earlier_than(&mut self, t: unix_time::Instant) -> Option<TimerEvent> {
+        if let Some(te) = self.timer_events.get(0) {
+            if te.at <= t {
+                // This is safe since we just checked that such an element exists.
+                // Note that the Vec is still sorted.
+                return Some(self.timer_events.remove(0));
+            }
+        }
+        None
+    }
+
+    pub fn cancel_timer_event(&mut self, id: u64) -> Option<TimerEvent> {
+        let mut cancelled = None;
+        // This works, because we can only have a single id inside the timer events.
+        self.timer_events.retain(|te| {
+            if te.id == id {
+                cancelled = Some(*te);
+                false
+            } else {
+                true
+            }
+        });
+        cancelled
     }
 }
 
@@ -389,6 +448,28 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
         }
 
         pocodes
+    }
+
+    /// Returns the first timer event related to this plugin.
+    pub(crate) fn timeout(&self) -> Option<unix_time::Instant> {
+        self.env.as_ref(&self.store).timeout()
+    }
+
+    /// Process the timeout events related to this plugin.
+    pub(crate) fn on_timeout(&mut self, t: unix_time::Instant) -> Result<(), Error> {
+        while let Some(te) = self
+            .env
+            .as_mut(&mut self.store)
+            .pop_timer_event_if_earlier_than(t)
+        {
+            self.call(
+                &PluginOp::OnPluginTimeout(te.timer_id),
+                Anchor::Replace,
+                &[],
+            )?;
+        }
+
+        Ok(())
     }
 
     /// Returns whether this plugin provides behavior for the requested

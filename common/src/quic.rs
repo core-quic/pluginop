@@ -17,6 +17,7 @@ pub enum FrameSendKind {
 pub enum FrameSendOrder {
     AfterACK,
     BeforeStream,
+    End,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -270,7 +271,7 @@ pub struct Address {
 pub enum ConnectionField {
     /// Boolean indicating if this is a server-side connection.
     IsServer,
-    /// An Option<u64> being an internal identifier of this connection. Might be `None`.
+    /// An `Option<u64>` being an internal identifier of this connection. Might be `None`.
     InternalID,
     /// The version used by this connection, as a `u32`.
     Version,
@@ -284,7 +285,7 @@ pub enum ConnectionField {
     TransportParameter(Host, TransportParameterField),
     /// The token used over this connection, as an `Option<Vec<u8>>`.
     Token,
-    /// The connection error code, if any, as an `Option<u64>.
+    /// The connection error code, if any, as an `Option<u64>`.
     ConnectionError,
     /// The handshake write level, as a `i32`.
     /// TODO FIXME: this should probably move in a crypto field.
@@ -772,7 +773,7 @@ pub struct NewConnectionIdFrame {
     /// A connection ID of the specified length.
     pub connection_id: Bytes,
     /// A 128-bit value that will be used for a stateless reset when the associated connection
-    /// ID is used. Probably easier to manipulate as a Vec<u8>.
+    /// ID is used. Probably easier to manipulate as a `Vec<u8>`.
     pub stateless_reset_token: Bytes,
 }
 

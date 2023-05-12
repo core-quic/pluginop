@@ -4,7 +4,10 @@ use pluginop_common::{
 };
 use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Imports, Store, WasmPtr};
 
-use crate::{plugin::Env, PluginizableConnection};
+use crate::{
+    plugin::{Env, TimerEvent},
+    PluginizableConnection,
+};
 
 pub enum CTPError {
     BadType,
@@ -242,10 +245,10 @@ fn get_inputs_from_plugin<CTP: ConnectionToPlugin>(
 /// Prints the content of the plugin memory located at the address `ptr` as a `str` having a length
 /// of `len`.
 ///
-/// Code from https://github.com/wasmerio/wasmer-rust-example/blob/master/examples/string.rs
+/// Code from `<https://github.com/wasmerio/wasmer-rust-example/blob/master/examples/string.rs>`
 ///
 /// Function intended to be part of the Plugin API.
-pub fn print_from_plugin<CTP: ConnectionToPlugin>(
+fn print_from_plugin<CTP: ConnectionToPlugin>(
     env: FunctionEnvMut<Env<CTP>>,
     ptr: WasmPtr<u8>,
     len: WASMLen,
@@ -271,7 +274,7 @@ pub fn print_from_plugin<CTP: ConnectionToPlugin>(
 /// Gets a specific connection field.
 ///
 /// Function intended to be part of the Plugin API.
-pub fn get_connection_from_plugin<CTP: ConnectionToPlugin>(
+fn get_connection_from_plugin<CTP: ConnectionToPlugin>(
     mut env: FunctionEnvMut<Env<CTP>>,
     field_ptr: WasmPtr<u8>,
     field_len: WASMLen,
@@ -292,6 +295,9 @@ pub fn get_connection_from_plugin<CTP: ConnectionToPlugin>(
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked_mut() };
+    // SAFETY:  Also, this won't increase the memory of the plugin,
+    // as the guest will preallocate the memory.
+    let memory_slice = unsafe { std::slice::from_raw_parts_mut(memory_slice.as_mut_ptr(), memory_slice.len()) };
     let field = match bincode::deserialize_from(
         &memory_slice[field_ptr.offset() as usize..(field_ptr.offset() + field_len) as usize],
     ) {
@@ -319,7 +325,7 @@ pub fn get_connection_from_plugin<CTP: ConnectionToPlugin>(
 /// Gets a specific connection field.
 ///
 /// Function intended to be part of the Plugin API.
-pub fn set_connection_from_plugin<CTP: ConnectionToPlugin>(
+fn set_connection_from_plugin<CTP: ConnectionToPlugin>(
     mut env: FunctionEnvMut<Env<CTP>>,
     field_ptr: WasmPtr<u8>,
     field_len: WASMLen,
@@ -340,6 +346,9 @@ pub fn set_connection_from_plugin<CTP: ConnectionToPlugin>(
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked() };
+    // SAFETY:  Also, this won't increase the memory of the plugin,
+    // as the guest will preallocate the memory.
+    let memory_slice = unsafe { std::slice::from_raw_parts(memory_slice.as_ptr(), memory_slice.len()) };
     let field = match bincode::deserialize_from(
         &memory_slice[field_ptr.offset() as usize..(field_ptr.offset() + field_len) as usize],
     ) {
@@ -364,7 +373,7 @@ pub fn set_connection_from_plugin<CTP: ConnectionToPlugin>(
     }
 }
 
-pub fn get_bytes_from_plugin<CTP: ConnectionToPlugin>(
+fn get_bytes_from_plugin<CTP: ConnectionToPlugin>(
     mut env: FunctionEnvMut<Env<CTP>>,
     tag: u64,
     len: u64,
@@ -385,6 +394,9 @@ pub fn get_bytes_from_plugin<CTP: ConnectionToPlugin>(
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked_mut() };
+    // SAFETY:  Also, this won't increase the memory of the plugin,
+    // as the guest will preallocate the memory.
+    let memory_slice = unsafe { std::slice::from_raw_parts_mut(memory_slice.as_mut_ptr(), memory_slice.len()) };
     let mem = &mut memory_slice[res_ptr.offset() as usize..(res_ptr.offset() + res_len) as usize];
     match env.data_mut().get_bytes(tag as usize, len as usize, mem) {
         Ok(w) => w as i64,
@@ -392,7 +404,7 @@ pub fn get_bytes_from_plugin<CTP: ConnectionToPlugin>(
     }
 }
 
-pub fn put_bytes_from_plugin<CTP: ConnectionToPlugin>(
+fn put_bytes_from_plugin<CTP: ConnectionToPlugin>(
     mut env: FunctionEnvMut<Env<CTP>>,
     tag: u64,
     ptr: WasmPtr<u8>,
@@ -412,14 +424,17 @@ pub fn put_bytes_from_plugin<CTP: ConnectionToPlugin>(
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked_mut() };
-    let mem = &mut memory_slice[ptr.offset() as usize..(ptr.offset() + len) as usize];
+    // SAFETY:  Also, this won't increase the memory of the plugin,
+    // as the guest will preallocate the memory.
+    let memory_slice = unsafe { std::slice::from_raw_parts(memory_slice.as_ptr(), memory_slice.len()) };
+    let mem = &memory_slice[ptr.offset() as usize..(ptr.offset() + len) as usize];
     match env.data_mut().put_bytes(tag as usize, mem) {
         Ok(w) => w as i64,
         Err(_) => -3,
     }
 }
 
-pub fn register_from_plugin<CTP: ConnectionToPlugin>(
+fn register_from_plugin<CTP: ConnectionToPlugin>(
     mut env: FunctionEnvMut<Env<CTP>>,
     ptr: WasmPtr<u8>,
     len: WASMLen,
@@ -453,6 +468,50 @@ pub fn register_from_plugin<CTP: ConnectionToPlugin>(
     0
 }
 
+fn set_timer_from_plugin<CTP: ConnectionToPlugin>(
+    mut env: FunctionEnvMut<Env<CTP>>,
+    ts_ptr: WasmPtr<u8>,
+    ts_len: WASMLen,
+    id: u64,
+    timer_id: u64,
+) -> i64 {
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -2,
+    };
+    let view = memory.view(&env);
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked() };
+    let instant = match bincode::deserialize_from(
+        &memory_slice[ts_ptr.offset() as usize..(ts_ptr.offset() + ts_len) as usize],
+    ) {
+        Ok(i) => i,
+        Err(_) => return -3,
+    };
+    env.data_mut()
+        .insert_timer_event(TimerEvent::new(instant, id, timer_id));
+    0
+}
+
+fn cancel_timer_from_plugin<CTP: ConnectionToPlugin>(
+    mut env: FunctionEnvMut<Env<CTP>>,
+    id: u64,
+) -> i64 {
+    // Just returns whether some event was actually removed.
+    if env.data_mut().cancel_timer_event(id).is_some() {
+        0
+    } else {
+        -1
+    }
+}
+
 macro_rules! exports_insert {
     ($e:ident, $s:ident, $env:ident, $f:ident) => {
         $e.insert(stringify!($f), Function::new_typed_with_env($s, $env, $f));
@@ -460,10 +519,6 @@ macro_rules! exports_insert {
 }
 
 /// Gets the imports that are common to any implementation.
-///
-/// The host implementation still needs to privide the following functions:
-///    - buffer_get_bytes_from_plugin
-///    - buffer_put_bytes_from_plugin
 pub fn get_imports_with<CTP: ConnectionToPlugin>(
     mut exports: Exports,
     store: &mut Store,
@@ -483,6 +538,8 @@ pub fn get_imports_with<CTP: ConnectionToPlugin>(
     exports_insert!(exports, store, env, get_bytes_from_plugin);
     exports_insert!(exports, store, env, put_bytes_from_plugin);
     exports_insert!(exports, store, env, register_from_plugin);
+    exports_insert!(exports, store, env, set_timer_from_plugin);
+    exports_insert!(exports, store, env, cancel_timer_from_plugin);
 
     let mut imports = Imports::new();
     imports.register_namespace("env", exports);

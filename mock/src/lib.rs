@@ -662,4 +662,43 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), 3);
     }
+
+    #[test]
+    fn timer_usage() {
+        let mut pcd =
+            PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
+        let path = "../tests/timer-usage/timer_usage.wasm".to_string();
+        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        assert!(ok.is_ok());
+        let (po, a) = PluginOp::from_name("launch_timers");
+        assert!(pcd.0.get_ph().provides(&po, a));
+        let ph = pcd.0.get_ph_mut();
+        let now = unix_time::Instant::now();
+        let res = ph.call(&po, &[now.into()]);
+        assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), []);
+        // Nothing should happen now.
+        ph.on_timeout(now).unwrap();
+        let first_timeout = now + Duration::from_millis(20);
+        assert_eq!(ph.timeout(), Some(first_timeout));
+        // Use true time.
+        std::thread::sleep(first_timeout - unix_time::Instant::now());
+        let now = unix_time::Instant::now();
+        // Process timers.
+        ph.on_timeout(now).unwrap();
+        let (po, a) = PluginOp::from_name("check_success");
+        assert!(ph.provides(&po, a));
+        let res = ph.call(&po, &[unix_time::Instant::now().into()]);
+        assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), [PluginVal::Bool(false)]);
+        // Wait for some success time.
+        std::thread::sleep(Duration::from_millis(40));
+        let now = unix_time::Instant::now();
+        assert_eq!(ph.timeout(), None);
+        // Should trigger nothing.
+        ph.on_timeout(now).unwrap();
+        let res = ph.call(&po, &[now.into()]);
+        assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), [PluginVal::Bool(true)]);
+    }
 }
