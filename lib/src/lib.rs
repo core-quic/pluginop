@@ -1,6 +1,7 @@
 use std::{
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
+    time::Instant,
 };
 
 use api::ConnectionToPlugin;
@@ -9,7 +10,7 @@ use handler::PluginHandler;
 use plugin::Env;
 use pluginop_common::{quic, PluginInputType, PluginOp, PluginOutputType};
 use pluginop_rawptr::RawMutPtr;
-use unix_time::Instant;
+use unix_time::Instant as UnixInstant;
 use wasmer::{RuntimeError, TypedFunction};
 
 pub type PluginFunction = TypedFunction<PluginInputType, PluginOutputType>;
@@ -156,6 +157,12 @@ macro_rules! impl_from_with_ph {
     };
 }
 
+impl<CTP: ConnectionToPlugin> FromWithPH<Instant, CTP> for PluginVal {
+    fn from_with_ph(value: Instant, ph: &mut PluginHandler<CTP>) -> Self {
+        PluginVal::UNIXInstant(ph.get_unix_instant_from_instant(value))
+    }
+}
+
 impl_from_with_ph!(PluginVal, bool);
 impl_from_with_ph!(PluginVal, i32);
 impl_from_with_ph!(PluginVal, i64);
@@ -165,7 +172,7 @@ impl_from_with_ph!(PluginVal, f32);
 impl_from_with_ph!(PluginVal, f64);
 impl_from_with_ph!(PluginVal, usize);
 impl_from_with_ph!(PluginVal, std::time::Duration);
-impl_from_with_ph!(PluginVal, unix_time::Instant);
+impl_from_with_ph!(PluginVal, UnixInstant);
 impl_from_with_ph!(PluginVal, std::net::SocketAddr);
 impl_from_with_ph!(PluginVal, quic::QVal);
 

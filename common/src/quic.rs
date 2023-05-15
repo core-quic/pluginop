@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
-use unix_time::Instant;
 
 use serde::{Deserialize, Serialize};
+use unix_time::Instant as UnixInstant;
 
 use crate::{Bytes, ConversionError, PluginVal};
 
@@ -412,8 +412,8 @@ pub struct SentPacket {
     /// The number of bytes sent in this packet, not including UDP or IP overhead, but including
     /// QUIC framing overhead.
     pub sent_bytes: usize,
-    /// The time the packet was sent.
-    pub time_sent: Instant,
+    /// The time the packet was sent, relative to the beginning of the session.
+    pub time_sent: UnixInstant,
 }
 
 /// Each ACK Range consists of alternating Gap and ACK Range values in descending packet number

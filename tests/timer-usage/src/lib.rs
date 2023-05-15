@@ -1,18 +1,18 @@
-use pluginop_wasm::{PluginEnv, PluginCell, Instant, Duration};
+use pluginop_wasm::{PluginEnv, PluginCell, UnixInstant, Duration};
 
 use lazy_static::lazy_static;
 
 struct Data {
     success_fired: bool,
     success_cancelled: bool,
-    success_time: Instant,
+    success_time: UnixInstant,
 }
 
 lazy_static! {
     static ref DATA: PluginCell<Data> =PluginCell::new(Data {
         success_fired: false,
         success_cancelled: false,
-        success_time: Instant::at(0, 0),
+        success_time: UnixInstant::at(0, 0),
     });
 }
 
@@ -20,7 +20,7 @@ lazy_static! {
 #[no_mangle]
 pub extern fn launch_timers(penv: &mut PluginEnv) -> i64 {
     // We start two timers. One will fire, the second will be cancelled.
-    let now = match penv.get_input::<Instant>(0) {
+    let now = match penv.get_input::<UnixInstant>(0) {
         Ok(i) => i,
         _ => return -1,
     };
@@ -58,7 +58,7 @@ pub extern fn on_plugin_timeout_2(_: &mut PluginEnv) -> i64 {
 pub extern fn check_success(penv: &mut PluginEnv) -> i64 {
     // Get the time. If we are too early, return 0 (false). Otherwise,
     // return true. A failed test returns a non-zero error code.
-    let now = match penv.get_input::<Instant>(0) {
+    let now = match penv.get_input::<UnixInstant>(0) {
         Ok(i) => i,
         _ => return -1,
     };

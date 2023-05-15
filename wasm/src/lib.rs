@@ -16,7 +16,7 @@ use pluginop_common::PluginVal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 pub use std::time::Duration;
-pub use unix_time::Instant;
+pub use unix_time::Instant as UnixInstant;
 
 /// The maximum size of a result, may be subject to future changes.
 const SIZE: usize = 1500;
@@ -343,7 +343,7 @@ impl PluginEnv {
     /// provided name.
     ///
     /// Returns the identifier to the timer event, as provided as argument.
-    pub fn set_timer(&mut self, ts: unix_time::Instant, id: u64, timer_id: u64) -> Result<()> {
+    pub fn set_timer(&mut self, ts: UnixInstant, id: u64, timer_id: u64) -> Result<()> {
         let serialized_ts = bincode::serialize(&ts).map_err(|_| Error::SerializeError)?;
         match unsafe {
             set_timer_from_plugin(
@@ -400,7 +400,7 @@ mod todo {
         APIResult, PluginOp, PluginVal, WASMLen, WASMPtr,
     };
     use serde::{Deserialize, Serialize};
-    use unix_time::Instant;
+    use unix_time::Instant as UnixInstant;
 
     use crate::{
         buffer_get_bytes_from_plugin, buffer_put_bytes_from_plugin, call_proto_op_from_plugin,
@@ -559,7 +559,7 @@ mod todo {
             bincode::deserialize(slice).expect("no error")
         }
 
-        fn get_current_time() -> Instant {
+        fn get_current_time() -> UnixInstant {
             let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
             unsafe {
                 get_current_time_from_plugin(res.as_mut_ptr() as WASMPtr, SIZE as WASMLen);
@@ -568,7 +568,7 @@ mod todo {
             bincode::deserialize(slice).expect("no error")
         }
 
-        fn get_time() -> unix_time::Instant {
+        fn get_time() -> UnixInstant {
             let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
             unsafe {
                 get_time_from_plugin(res.as_mut_ptr() as WASMPtr, SIZE as WASMLen);

@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use pluginop::{
@@ -11,7 +11,6 @@ use pluginop::{
     Error,
 };
 use pluginop_mock::{ConnectionDummy, PluginizableConnectionDummy};
-use unix_time::Instant;
 use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
 
 fn add_one(_: FunctionEnvMut<Env<ConnectionDummy>>, x: u64) -> u64 {

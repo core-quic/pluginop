@@ -2,10 +2,12 @@ use std::{
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
     path::PathBuf,
+    time::Instant,
 };
 
 use log::error;
 use pluginop_common::{quic::Registration, Anchor, Bytes, PluginOp, PluginVal};
+use unix_time::Instant as UnixInstant;
 use wasmer::{Engine, Exports, FunctionEnv, Store};
 use wasmer_compiler_singlepass::Singlepass;
 
@@ -69,6 +71,12 @@ pub struct PluginHandler<CTP: ConnectionToPlugin> {
     bytes_contents: Vec<BytesContent>,
     /// Registrations made by the plugins.
     registrations: Vec<Registration>,
+    /// A reference time used to make conversions between `Duration` at plugin side
+    /// and `Instant` at host side.
+    reference_instant: Instant,
+    /// A reference UNIX-based time used to make conversions between `Duration` at
+    /// plugin side and `Instant` at host side.
+    reference_unix_instant: UnixInstant,
     /// Force this structure to be pinned.
     _pin: PhantomPinned,
 }
@@ -118,6 +126,8 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
             plugins: PluginArray { array: Vec::new() },
             bytes_contents: Vec::new(),
             registrations: Vec::new(),
+            reference_instant: Instant::now(),
+            reference_unix_instant: UnixInstant::now(),
             _pin: PhantomPinned,
         }
     }
@@ -165,14 +175,14 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
     }
 
     /// Returns the first timeout event required by a plugin.
-    pub fn timeout(&self) -> Option<unix_time::Instant> {
+    pub fn timeout(&self) -> Option<Instant> {
         self.plugins.iter().filter_map(|p| p.timeout()).min()
     }
 
     /// Calls potential timeouts that fired since the provided time.
     ///
     /// If there were not firing timers, this method does nothing.
-    pub fn on_timeout(&mut self, t: unix_time::Instant) -> Result<(), Error> {
+    pub fn on_timeout(&mut self, t: Instant) -> Result<(), Error> {
         for p in self.plugins.iter_mut() {
             p.on_timeout(t)?;
         }
@@ -239,6 +249,18 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
 
     pub(crate) fn get_export_func(&self) -> fn(&mut Store, &FunctionEnv<Env<CTP>>) -> Exports {
         self.exports_func
+    }
+
+    /// Gets a UNIX-based `Instant` usable by the plugin side from a host-side `Instant`.
+    pub(crate) fn get_unix_instant_from_instant(&self, i: Instant) -> UnixInstant {
+        let d = i.duration_since(self.reference_instant);
+        self.reference_unix_instant + d
+    }
+
+    /// Gets a `Instant` usable by the host side from a plugin-side UNIX-based `Instant`.
+    pub(crate) fn get_instant_from_unix_instant(&self, i: UnixInstant) -> Instant {
+        let d = i.duration_since(self.reference_unix_instant);
+        self.reference_instant + d
     }
 
     /// Invokes the protocol operation `po` and runs its anchors.

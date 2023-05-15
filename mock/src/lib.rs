@@ -1,5 +1,5 @@
 use std::ops::{Deref, DerefMut};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use pluginop::api::{ConnectionToPlugin, ToPluginizableConnection};
 use pluginop::common::quic::{self, Frame, Registration};
@@ -12,7 +12,6 @@ use pluginop::octets::{Octets, OctetsMut};
 use pluginop::plugin::Env;
 use pluginop::pluginop_macro::{pluginop, pluginop_param, pluginop_result, pluginop_result_param};
 use pluginop::{api::CTPError, ParentReferencer, PluginizableConnection};
-use unix_time::Instant;
 use wasmer::{Exports, FunctionEnv, Store};
 
 /// Dummy object
@@ -368,7 +367,7 @@ impl DerefMut for PluginizableConnectionDummy {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use pluginop::{
         common::{
@@ -377,9 +376,8 @@ mod tests {
         },
         octets::{Octets, OctetsMut},
         plugin::Env,
-        Error,
+        Error, IntoWithPH,
     };
-    use unix_time::Instant;
     use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
 
     use crate::{ConnectionDummy, PluginizableConnectionDummy};
@@ -673,8 +671,9 @@ mod tests {
         let (po, a) = PluginOp::from_name("launch_timers");
         assert!(pcd.0.get_ph().provides(&po, a));
         let ph = pcd.0.get_ph_mut();
-        let now = unix_time::Instant::now();
-        let res = ph.call(&po, &[now.into()]);
+        let now = Instant::now();
+        let pv = now.into_with_ph(ph);
+        let res = ph.call(&po, &[pv]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), []);
         // Nothing should happen now.
@@ -682,22 +681,24 @@ mod tests {
         let first_timeout = now + Duration::from_millis(20);
         assert_eq!(ph.timeout(), Some(first_timeout));
         // Use true time.
-        std::thread::sleep(first_timeout - unix_time::Instant::now());
-        let now = unix_time::Instant::now();
+        std::thread::sleep(first_timeout - Instant::now());
+        let now = Instant::now();
         // Process timers.
         ph.on_timeout(now).unwrap();
         let (po, a) = PluginOp::from_name("check_success");
         assert!(ph.provides(&po, a));
-        let res = ph.call(&po, &[unix_time::Instant::now().into()]);
+        let pv = now.into_with_ph(ph);
+        let res = ph.call(&po, &[pv]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), [PluginVal::Bool(false)]);
         // Wait for some success time.
         std::thread::sleep(Duration::from_millis(40));
-        let now = unix_time::Instant::now();
+        let now = Instant::now();
         assert_eq!(ph.timeout(), None);
         // Should trigger nothing.
         ph.on_timeout(now).unwrap();
-        let res = ph.call(&po, &[now.into()]);
+        let pv = now.into_with_ph(ph);
+        let res = ph.call(&po, &[pv]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), [PluginVal::Bool(true)]);
     }
