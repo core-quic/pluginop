@@ -7,6 +7,7 @@ use std::{
     path::PathBuf,
     pin::Pin,
     sync::{Arc, Weak},
+    time::Instant,
 };
 
 use fnv::FnvHashMap;
@@ -128,7 +129,7 @@ impl From<OctetsMutPtr> for BytesContent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TimerEvent {
     /// When the timer event should take place.
-    at: unix_time::Instant,
+    at: Instant,
     /// The internal identifier. This identifier is unique within the plugin.
     id: u64,
     /// The timer identifier.
@@ -136,7 +137,7 @@ pub struct TimerEvent {
 }
 
 impl TimerEvent {
-    pub fn new(at: unix_time::Instant, id: u64, timer_id: u64) -> Self {
+    pub fn new(at: Instant, id: u64, timer_id: u64) -> Self {
         Self { at, id, timer_id }
     }
 }
@@ -218,7 +219,7 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
         bc.extend_from(mem)
     }
 
-    fn timeout(&self) -> Option<unix_time::Instant> {
+    fn timeout(&self) -> Option<Instant> {
         self.timer_events.get(0).map(|r| r.at)
     }
 
@@ -233,7 +234,7 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
         self.timer_events.sort();
     }
 
-    pub fn pop_timer_event_if_earlier_than(&mut self, t: unix_time::Instant) -> Option<TimerEvent> {
+    pub fn pop_timer_event_if_earlier_than(&mut self, t: Instant) -> Option<TimerEvent> {
         if let Some(te) = self.timer_events.get(0) {
             if te.at <= t {
                 // This is safe since we just checked that such an element exists.
@@ -451,12 +452,12 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
     }
 
     /// Returns the first timer event related to this plugin.
-    pub(crate) fn timeout(&self) -> Option<unix_time::Instant> {
+    pub(crate) fn timeout(&self) -> Option<Instant> {
         self.env.as_ref(&self.store).timeout()
     }
 
     /// Process the timeout events related to this plugin.
-    pub(crate) fn on_timeout(&mut self, t: unix_time::Instant) -> Result<(), Error> {
+    pub(crate) fn on_timeout(&mut self, t: Instant) -> Result<(), Error> {
         while let Some(te) = self
             .env
             .as_mut(&mut self.store)

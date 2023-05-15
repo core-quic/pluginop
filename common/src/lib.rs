@@ -1,9 +1,10 @@
 //! Sub-crate of `protocol-operation` containing structures needed for operations of both the
 //! host instance and the plugin ones.
 
-use serde::{Deserialize, Serialize};
 use std::{hash::Hash, net::SocketAddr, num::ParseIntError, time::Duration};
-use unix_time::Instant;
+
+use serde::{Deserialize, Serialize};
+use unix_time::Instant as UnixInstant;
 
 pub type PluginInputType = u32;
 pub type PluginOutputType = i64;
@@ -249,8 +250,8 @@ pub enum PluginVal {
     Bytes(Bytes),
     /// A duration.
     Duration(Duration),
-    /// A specific instant in time relative to the UNIX epoch.
-    Instant(Instant),
+    /// A UNIX-based instant.
+    UNIXInstant(UnixInstant),
     /// A socket address.
     SocketAddr(SocketAddr),
     /// QUIC specific inputs.
@@ -318,7 +319,13 @@ impl_from_try_from!(
     ConversionError,
     InvalidDuration
 );
-impl_from_try_from!(PluginVal, Instant, Instant, ConversionError, InvalidInstant);
+impl_from_try_from!(
+    PluginVal,
+    UNIXInstant,
+    UnixInstant,
+    ConversionError,
+    InvalidInstant
+);
 impl_from_try_from!(
     PluginVal,
     SocketAddr,

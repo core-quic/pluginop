@@ -17,7 +17,7 @@ pub extern fn process_frame_10(penv: &mut PluginEnv) -> i64 {
         Err(Error::ShortInternalBuffer) => return 0,
         _ => return -4,
     };
-    let _bytes = match penv.get_bytes(hdr.destination_cid.tag, hdr.destination_cid.max_len) {
+    let _bytes = match penv.get_bytes(hdr.destination_cid.tag, hdr.destination_cid.max_read_len) {
         Ok(dcid) => dcid,
         Err(_) => return -5,
     };
