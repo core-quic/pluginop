@@ -70,7 +70,7 @@ fn is_result_unit(ty: &syn::Type) -> bool {
                 .find(|s| &s.ident.to_string() == "Result")
             {
                 if let syn::PathArguments::AngleBracketed(ab) = &ps.arguments {
-                    if ab.args.len() != 1 {
+                    if ab.args.len() < 1 {
                         return false;
                     }
                     if let Some(GenericArgument::Type(syn::Type::Tuple(tu))) = ab.args.first() {
