@@ -15,6 +15,7 @@ pub enum FrameSendKind {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub enum FrameSendOrder {
+    First,
     AfterACK,
     BeforeStream,
     End,
