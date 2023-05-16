@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeSet,
     fmt::Debug,
-    io::Write,
+    io::{Cursor, Write},
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
     path::PathBuf,
@@ -44,6 +44,54 @@ impl DerefMut for PluginValArray {
     }
 }
 
+#[derive(Debug)]
+pub struct CursorBytesPtr(RawMutPtr<std::io::Cursor<bytes::Bytes>>);
+
+impl Deref for CursorBytesPtr {
+    type Target = std::io::Cursor<bytes::Bytes>;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &**self.0 }
+    }
+}
+
+impl DerefMut for CursorBytesPtr {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut **self.0 }
+    }
+}
+
+impl From<&mut Cursor<Bytes>> for CursorBytesPtr {
+    fn from(value: &mut Cursor<Bytes>) -> Self {
+        // Don't forget the memory here since we have only a reference.
+        CursorBytesPtr(RawMutPtr::new(value as *const _ as *mut _))
+    }
+}
+
+#[derive(Debug)]
+pub struct BytesMutPtr(RawMutPtr<BytesMut>);
+
+impl Deref for BytesMutPtr {
+    type Target = BytesMut;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &**self.0 }
+    }
+}
+
+impl DerefMut for BytesMutPtr {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut **self.0 }
+    }
+}
+
+impl From<&mut BytesMut> for BytesMutPtr {
+    fn from(value: &mut BytesMut) -> Self {
+        // Don't forget the memory here since we have only a reference.
+        BytesMutPtr(RawMutPtr::new(value as *const _ as *mut _))
+    }
+}
+
 /// An enum storing the actual content of `Bytes` that are not directly exposed
 /// to plugins. Some side utilities are provided to let plugins access these
 /// values under some conditions.
@@ -52,7 +100,11 @@ pub enum BytesContent {
     Copied(Vec<u8>),
     ZeroCopy(OctetsPtr),
     ZeroCopyMut(OctetsMutPtr),
+    CursorBytes(CursorBytesPtr),
+    BytesMut(BytesMutPtr),
 }
+
+use bytes::{Buf, Bytes, BytesMut};
 
 impl BytesContent {
     /// The number of bytes available to read.
@@ -61,6 +113,8 @@ impl BytesContent {
             BytesContent::Copied(v) => v.len(),
             BytesContent::ZeroCopy(o) => o.cap(),
             BytesContent::ZeroCopyMut(_) => 0,
+            BytesContent::CursorBytes(c) => c.remaining(),
+            BytesContent::BytesMut(_) => 0,
         }
     }
 
@@ -69,6 +123,8 @@ impl BytesContent {
             BytesContent::Copied(v) => v.capacity() - v.len(),
             BytesContent::ZeroCopy(_) => 0,
             BytesContent::ZeroCopyMut(o) => o.cap(),
+            BytesContent::CursorBytes(_) => 0,
+            BytesContent::BytesMut(b) => b.capacity() - b.len(),
         }
     }
 
@@ -89,6 +145,14 @@ impl BytesContent {
                 Ok(len)
             }
             BytesContent::ZeroCopyMut(_) => Err(CTPError::BadBytes),
+            BytesContent::CursorBytes(c) => {
+                if c.remaining() < w.len() {
+                    return Err(CTPError::BadBytes);
+                }
+                c.copy_to_slice(w);
+                Ok(w.len())
+            }
+            BytesContent::BytesMut(_) => Err(CTPError::BadBytes),
         }
     }
 
@@ -102,6 +166,11 @@ impl BytesContent {
             BytesContent::ZeroCopy(_) => Err(CTPError::BadBytes),
             BytesContent::ZeroCopyMut(o) => {
                 o.put_bytes(r).map_err(|_| CTPError::BadBytes)?;
+                Ok(r.len())
+            }
+            BytesContent::CursorBytes(_) => Err(CTPError::BadBytes),
+            BytesContent::BytesMut(b) => {
+                b.extend_from_slice(r);
                 Ok(r.len())
             }
         }
@@ -123,6 +192,18 @@ impl From<OctetsPtr> for BytesContent {
 impl From<OctetsMutPtr> for BytesContent {
     fn from(value: OctetsMutPtr) -> Self {
         Self::ZeroCopyMut(value)
+    }
+}
+
+impl From<CursorBytesPtr> for BytesContent {
+    fn from(value: CursorBytesPtr) -> Self {
+        Self::CursorBytes(value)
+    }
+}
+
+impl From<BytesMutPtr> for BytesContent {
+    fn from(value: BytesMutPtr) -> Self {
+        Self::BytesMut(value)
     }
 }
 
@@ -262,6 +343,7 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
 
 const KV_VEC_MAX_ELEMS: usize = 16;
 
+#[derive(Debug)]
 enum KeyValueCollectionInner<K, V> {
     Vec(Vec<(K, V)>),
     HashMap(FnvHashMap<K, V>),
@@ -313,6 +395,7 @@ where
     }
 }
 
+#[derive(Debug)]
 struct KeyValueCollection<K, V> {
     inner: KeyValueCollectionInner<K, V>,
     capacity: usize,

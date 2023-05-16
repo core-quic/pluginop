@@ -1,4 +1,5 @@
 use std::{
+    fmt::Debug,
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
     time::Instant,
@@ -7,7 +8,7 @@ use std::{
 use api::ConnectionToPlugin;
 use common::{Anchor, PluginVal};
 use handler::PluginHandler;
-use plugin::Env;
+use plugin::{BytesMutPtr, CursorBytesPtr, Env};
 use pluginop_common::{quic, PluginInputType, PluginOp, PluginOutputType};
 use pluginop_rawptr::RawMutPtr;
 use unix_time::Instant as UnixInstant;
@@ -20,6 +21,16 @@ pub struct POCode {
     pre: Option<PluginFunction>,
     replace: Option<PluginFunction>,
     post: Option<PluginFunction>,
+}
+
+impl Debug for POCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("POCode")
+            .field("pre", &self.pre.is_some())
+            .field("replace", &self.replace.is_some())
+            .field("post", &self.post.is_some())
+            .finish()
+    }
 }
 
 impl POCode {
@@ -210,6 +221,18 @@ impl<CTP: ConnectionToPlugin> FromWithPH<octets::OctetsPtr, CTP> for PluginVal {
 
 impl<CTP: ConnectionToPlugin> FromWithPH<octets::OctetsMutPtr, CTP> for PluginVal {
     fn from_with_ph(value: octets::OctetsMutPtr, ph: &mut PluginHandler<CTP>) -> Self {
+        PluginVal::Bytes(ph.add_bytes_content(value.into()))
+    }
+}
+
+impl<CTP: ConnectionToPlugin> FromWithPH<CursorBytesPtr, CTP> for PluginVal {
+    fn from_with_ph(value: CursorBytesPtr, ph: &mut PluginHandler<CTP>) -> Self {
+        PluginVal::Bytes(ph.add_bytes_content(value.into()))
+    }
+}
+
+impl<CTP: ConnectionToPlugin> FromWithPH<BytesMutPtr, CTP> for PluginVal {
+    fn from_with_ph(value: BytesMutPtr, ph: &mut PluginHandler<CTP>) -> Self {
         PluginVal::Bytes(ph.add_bytes_content(value.into()))
     }
 }
