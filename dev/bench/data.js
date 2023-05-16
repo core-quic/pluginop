@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1684159591963,
+  "lastUpdate": 1684225687804,
   "repoUrl": "https://github.com/qdeconinck/pluginop",
   "entries": {
     "Pluginop benchmarks": [
@@ -1613,6 +1613,96 @@ window.BENCHMARK_DATA = {
             "name": "super-frame send and receive",
             "value": 12336,
             "range": "± 642",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "committer": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "distinct": true,
+          "id": "d4d2e1078e993a702a17233c479e73c28df92492",
+          "message": "fix parsing of Result with unit type\n\nWe can have `Result<()>`, or `Result<(), Error>`. The second case\nwas not handled properly.",
+          "timestamp": "2023-05-16T10:19:42+02:00",
+          "tree_id": "f8f587972216951ff867d37546b5dcfaf100bed7",
+          "url": "https://github.com/qdeconinck/pluginop/commit/d4d2e1078e993a702a17233c479e73c28df92492"
+        },
+        "date": 1684225686745,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "run and return",
+            "value": 158,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "memory allocation",
+            "value": 4380100,
+            "range": "± 79609",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "static memory",
+            "value": 4812,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inputs support",
+            "value": 5266,
+            "range": "± 101",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "input outputs",
+            "value": 7120,
+            "range": "± 22",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "increase-max-data",
+            "value": 5306,
+            "range": "± 28",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first pluginop",
+            "value": 10632841,
+            "range": "± 255507",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "macro simple",
+            "value": 5186218,
+            "range": "± 172790",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "max-data send and receive",
+            "value": 235,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "max-data wasm send and receive",
+            "value": 9027,
+            "range": "± 18",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "super-frame send and receive",
+            "value": 12398,
+            "range": "± 532",
             "unit": "ns/iter"
           }
         ]
