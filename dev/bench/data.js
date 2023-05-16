@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1684226569476,
+  "lastUpdate": 1684250943998,
   "repoUrl": "https://github.com/qdeconinck/pluginop",
   "entries": {
     "Pluginop benchmarks": [
@@ -1793,6 +1793,96 @@ window.BENCHMARK_DATA = {
             "name": "super-frame send and receive",
             "value": 13761,
             "range": "± 711",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "quentin.deconinck@uclouvain.be",
+            "name": "Quentin De Coninck",
+            "username": "qdeconinck"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "87c15a197da7360fe25d2202a4d4be90b39a71fb",
+          "message": "Merge pull request #25 from qdeconinck/quinn-compatibility\n\nsome additions to make it work with quinn",
+          "timestamp": "2023-05-16T17:20:35+02:00",
+          "tree_id": "db7f4e73f52f4bc41eef472c73e725106c305204",
+          "url": "https://github.com/qdeconinck/pluginop/commit/87c15a197da7360fe25d2202a4d4be90b39a71fb"
+        },
+        "date": 1684250942742,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "run and return",
+            "value": 198,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "memory allocation",
+            "value": 7800808,
+            "range": "± 1580240",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "static memory",
+            "value": 5227,
+            "range": "± 23",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inputs support",
+            "value": 5664,
+            "range": "± 94",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "input outputs",
+            "value": 7485,
+            "range": "± 59",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "increase-max-data",
+            "value": 5320,
+            "range": "± 136",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first pluginop",
+            "value": 11856786,
+            "range": "± 534442",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "macro simple",
+            "value": 5971116,
+            "range": "± 209489",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "max-data send and receive",
+            "value": 298,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "max-data wasm send and receive",
+            "value": 9749,
+            "range": "± 380",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "super-frame send and receive",
+            "value": 13373,
+            "range": "± 1279",
             "unit": "ns/iter"
           }
         ]
