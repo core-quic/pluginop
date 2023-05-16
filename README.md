@@ -18,3 +18,9 @@ The project consists in several sub-crates:
 - [pluginop-wasm](https://github.com/qdeconinck/pluginop/tree/main/wasm): the crate offering an API to plugins
 
 The [tests folder](https://github.com/qdeconinck/pluginop/tree/main/tests) contains plugins for tests and benchmarks purposes.
+
+
+## Supported Core Implementations
+
+- core-quic: Based on quiche, main core implementation
+- core-quinn: Based on quinn, mostly integrated in the quinn-proto crate. Does not have full support (yet), but simple frame-based plugins work.
