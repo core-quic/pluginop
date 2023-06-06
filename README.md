@@ -22,5 +22,10 @@ The [tests folder](https://github.com/qdeconinck/pluginop/tree/main/tests) conta
 
 ## Supported Core Implementations
 
-- core-quic: Based on quiche, main core implementation
-- core-quinn: Based on quinn, mostly integrated in the quinn-proto crate. Does not have full support (yet), but simple frame-based plugins work.
+- [core-quic](https://github.com/qdeconinck/core-quiche): Based on quiche, main core implementation
+- [core-quinn](https://github.com/qdeconinck/core-quinn): Based on quinn, mostly integrated in the quinn-proto crate. Does not have full support (yet), but simple frame-based plugins work.
+
+
+## Existing plugins
+
+QUIC-specific plugins are available at the [core-quic-plugins](https://github.com/qdeconinck/core-quic-plugins) repo.
