@@ -83,11 +83,22 @@ pub enum PluginOp {
     Other([u8; 32]),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Anchor {
     Pre,
     Replace,
     Post,
+}
+
+impl Anchor {
+    /// Returns an index value for the Anchor.
+    pub fn index(&self) -> usize {
+        match self {
+            Anchor::Pre => 0,
+            Anchor::Replace => 1,
+            Anchor::Post => 2,
+        }
+    }
 }
 
 fn extract_po_param(name: &str) -> Result<u64, ParseIntError> {

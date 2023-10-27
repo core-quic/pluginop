@@ -77,6 +77,8 @@ pub struct PluginHandler<CTP: ConnectionToPlugin> {
     /// A reference UNIX-based time used to make conversions between `Duration` at
     /// plugin side and `Instant` at host side.
     reference_unix_instant: UnixInstant,
+    /// Whether the anchor is provided by any of the plugins.
+    has_anchor: [bool; 3],
     /// Force this structure to be pinned.
     _pin: PhantomPinned,
 }
@@ -128,6 +130,7 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
             registrations: Vec::new(),
             reference_instant: Instant::now(),
             reference_unix_instant: UnixInstant::now(),
+            has_anchor: [false; 3],
             _pin: PhantomPinned,
         }
     }
@@ -161,6 +164,11 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
             ));
         }
         let plugin = Plugin::new(plugin_fname, self)?;
+        // Cache whether anchors are provided.
+        self.has_anchor
+            .iter_mut()
+            .zip(plugin.has_anchor())
+            .for_each(|(i, e)| *i |= e);
         self.plugins.push(plugin);
         // Now the plugin is at its definitive area in memory, so we can initialize it.
         self.plugins
@@ -170,8 +178,15 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
             .map_err(|e| Error::PluginLoadingError(format!("{:?}", e)))
     }
 
+    /// Returns whether there is any POST anchor in the handler.
+    pub fn has_post(&self) -> bool {
+        self.has_anchor[Anchor::Post.index()]
+    }
+
+    /// Returns whether there is a bytecode providing the plugin operation
+    /// at the requested anchor.
     pub fn provides(&self, po: &PluginOp, anchor: Anchor) -> bool {
-        self.plugins.provides(po, anchor)
+        self.has_anchor[anchor.index()] && self.plugins.provides(po, anchor)
     }
 
     /// Returns the first timeout event required by a plugin.
@@ -313,6 +328,21 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         }
 
         Ok(res)
+    }
+
+    /// Only for PRE or POST calls.
+    pub fn call_direct(
+        &mut self,
+        po: &PluginOp,
+        anchor: Anchor,
+        params: &[PluginVal],
+    ) -> Result<(), Error> {
+        assert_ne!(anchor, Anchor::Replace);
+        for p in self.plugins.iter_mut().filter(|p| p.provides(po, anchor)) {
+            p.call(po, anchor, params)?;
+        }
+
+        Ok(())
     }
 
     /// Invokes the protocol operation `po` and runs its anchors.

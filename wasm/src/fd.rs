@@ -3,16 +3,16 @@ use std::{
     path::Path,
 };
 
-use serde::Serialize;
+use pluginop_common::{WASMLen, WASMPtr};
 use std::convert::TryFrom;
 
 extern "C" {
-    fn create_file_from_plugin(path_ptr: u32, path_len: u32) -> i32;
-    fn write_file_from_plugin(fd: i32, ptr: u32, len: u32) -> i64;
+    fn create_file_from_plugin(path_ptr: u32, path_len: u32) -> i64;
+    fn write_file_from_plugin(fd: i64, ptr: u32, len: u32) -> i64;
 }
 
 pub enum FileDescriptorType {
-    File(i32),
+    File(i64),
     Network,
 }
 
@@ -27,9 +27,8 @@ impl FileDescriptor {
         todo!()
     }
 
-    pub fn create<P: AsRef<Path> + Serialize>(path: P) -> std::io::Result<Self> {
-        let ser_path = bincode::serialize(path.as_ref()).expect("serialized path");
-        match unsafe { create_file_from_plugin(ser_path.as_ptr() as u32, ser_path.len() as u32) } {
+    pub fn create(path: &str) -> std::io::Result<Self> {
+        match unsafe { create_file_from_plugin(path.as_ptr() as WASMPtr, path.len() as WASMLen) } {
             fd if fd >= 0 => Ok(FileDescriptor {
                 fd: FileDescriptorType::File(fd),
             }),
