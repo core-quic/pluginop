@@ -2,6 +2,7 @@
 
 use std::cell::UnsafeCell;
 use std::convert::TryInto;
+use std::mem;
 use std::ops::Deref;
 
 pub use pluginop_common::quic;
@@ -78,7 +79,8 @@ extern "C" {
         -> APIResult;
     /* Cancel the timer with the given id */
     fn cancel_timer_from_plugin(id: u64) -> APIResult;
-
+    /* Gets the current UNIX time */
+    fn get_unix_instant_from_plugin(res_ptr: WASMPtr, res_len: WASMLen) -> APIResult;
     // ----- TODOs -----
     /* Functions for the buffer to read */
     fn buffer_get_bytes_from_plugin(ptr: WASMPtr, len: WASMLen) -> APIResult;
@@ -123,10 +125,6 @@ extern "C" {
         res_ptr: WASMPtr,
         res_len: WASMLen,
     ) -> APIResult;
-    /* Gets the current time */
-    fn get_current_time_from_plugin(res_ptr: WASMPtr, res_len: WASMLen);
-    /* Gets the time */
-    fn get_time_from_plugin(res_ptr: WASMPtr, res_len: WASMLen);
     /* Generates a connection ID */
     fn generate_connection_id_from_plugin(res_ptr: WASMPtr, res_len: WASMLen) -> APIResult;
 }
@@ -365,6 +363,19 @@ impl PluginEnv {
             _ => Err(Error::APICallError),
         }
     }
+
+    /// Get the current UNIX instant.
+    pub fn get_unix_instant(&self) -> Result<UnixInstant> {
+        let size = mem::size_of::<UnixInstant>();
+        let mut res = Vec::<u8>::with_capacity(size).into_boxed_slice();
+        let err =
+            unsafe { get_unix_instant_from_plugin(res.as_mut_ptr() as WASMPtr, size as WASMLen) };
+        if err != 0 {
+            return Err(Error::APICallError);
+        }
+        let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), size) };
+        bincode::deserialize(slice).map_err(|_| Error::SerializeError)
+    }
 }
 
 /// A cell structure to be used in single-threaded plugins.
@@ -400,13 +411,11 @@ mod todo {
         APIResult, PluginOp, PluginVal, WASMLen, WASMPtr,
     };
     use serde::{Deserialize, Serialize};
-    use unix_time::Instant as UnixInstant;
 
     use crate::{
         buffer_get_bytes_from_plugin, buffer_put_bytes_from_plugin, call_proto_op_from_plugin,
-        generate_connection_id_from_plugin, get_current_time_from_plugin,
-        get_sent_packet_from_plugin, get_time_from_plugin, set_recovery_from_plugin, PluginEnv,
-        SIZE,
+        generate_connection_id_from_plugin, get_sent_packet_from_plugin, set_recovery_from_plugin,
+        PluginEnv, SIZE,
     };
 
     impl PluginEnv {
@@ -554,24 +563,6 @@ mod todo {
                     res.as_mut_ptr() as WASMPtr,
                     SIZE as WASMLen,
                 );
-            }
-            let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-            bincode::deserialize(slice).expect("no error")
-        }
-
-        fn get_current_time() -> UnixInstant {
-            let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
-            unsafe {
-                get_current_time_from_plugin(res.as_mut_ptr() as WASMPtr, SIZE as WASMLen);
-            }
-            let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-            bincode::deserialize(slice).expect("no error")
-        }
-
-        fn get_time() -> UnixInstant {
-            let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
-            unsafe {
-                get_time_from_plugin(res.as_mut_ptr() as WASMPtr, SIZE as WASMLen);
             }
             let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
             bincode::deserialize(slice).expect("no error")

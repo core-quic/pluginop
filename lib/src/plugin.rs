@@ -1,10 +1,12 @@
 use std::{
+    cell::UnsafeCell,
     collections::BTreeSet,
     fmt::Debug,
+    fs::File,
     io::{Cursor, Write},
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
-    path::PathBuf,
+    path::{Path, PathBuf},
     pin::Pin,
     sync::{Arc, Weak},
     time::Instant,
@@ -242,6 +244,8 @@ pub struct Env<CTP: ConnectionToPlugin> {
     /// Store for opaque values used by the plugin. Typically, it contains pointers, and WASM
     /// pointers are 32-bit values.
     pub opaque_values: Pin<Box<FnvHashMap<u64, u32>>>,
+    /// The files currently in use by the underlying plugin.
+    files: Vec<UnsafeCell<File>>,
 }
 
 pub(crate) fn create_env<CTP: ConnectionToPlugin>(ph: RawMutPtr<PluginHandler<CTP>>) -> Env<CTP> {
@@ -254,6 +258,7 @@ pub(crate) fn create_env<CTP: ConnectionToPlugin>(ph: RawMutPtr<PluginHandler<CT
         inputs: Pin::new(PluginValArray::default()),
         outputs: Pin::new(PluginValArray::default()),
         opaque_values: Box::pin(FnvHashMap::default()),
+        files: Vec::new(),
     }
 }
 
@@ -338,6 +343,43 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
             }
         });
         cancelled
+    }
+
+    pub fn create_file_with_path(&mut self, path: &Path) -> Result<i64, CTPError> {
+        // TODO: we need to check whether we have the permisison to create the file.
+        // TODO: secured path location (avoid /etc/passwd vulnerabilities)
+        match File::create(path) {
+            Ok(f) => {
+                // Don't let the plugins directly handle files.
+                let fd = self.files.len();
+                self.files.push(UnsafeCell::new(f));
+                Ok(fd as i64)
+            }
+            Err(e) => {
+                error!("plugin: cannot create file: {:?}", e);
+                Err(CTPError::FileError)
+            }
+        }
+    }
+
+    pub fn write_to_file(&self, fd: i64, buf: &[u8]) -> Result<usize, CTPError> {
+        if fd < 0 {
+            return Err(CTPError::FileError);
+        }
+        match self.files.get(fd as usize) {
+            Some(ucf) => {
+                let f = unsafe {
+                    // SAFETY: This is fine as long as plugins are single-threaded, no
+                    // concurrent writes on a same file.
+                    &mut *ucf.get()
+                };
+                match f.write(buf) {
+                    Ok(w) => Ok(w),
+                    Err(_) => Err(CTPError::FileError),
+                }
+            }
+            None => Err(CTPError::FileError),
+        }
     }
 }
 
@@ -442,6 +484,8 @@ pub(crate) struct Plugin<CTP: ConnectionToPlugin> {
     env: FunctionEnv<Env<CTP>>,
     /// A collection holding the plugin functions contained in the instance.
     pocodes: Pin<Box<KeyValueCollection<PluginOp, POCode>>>,
+    /// Cache indicating whether the plugin has the anchor or not (Pre, Replace, Post).
+    has_anchor: [bool; 3],
     /// Opaque value provided as argument to the plugin.
     plugin_state: u32,
 }
@@ -480,13 +524,15 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
                         permissions.insert(Permission::WriteBuffer);
                         permissions.insert(Permission::ReadBuffer);
 
-                        let pocodes = Plugin::<CTP>::get_pocodes(&instance, &mut store);
+                        let (pocodes, has_anchor) =
+                            Plugin::<CTP>::get_pocodes(&instance, &mut store);
 
                         Ok(Plugin {
                             instance: Arc::new(Box::pin(instance)),
                             store,
                             env,
                             pocodes: Box::pin(pocodes),
+                            has_anchor,
                             plugin_state: u32::from_be_bytes(plugin_state),
                         })
                     }
@@ -503,15 +549,20 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
         }
     }
 
-    fn get_pocodes(instance: &Instance, store: &mut Store) -> KeyValueCollection<PluginOp, POCode> {
+    fn get_pocodes(
+        instance: &Instance,
+        store: &mut Store,
+    ) -> (KeyValueCollection<PluginOp, POCode>, [bool; 3]) {
         let mut pocodes: KeyValueCollection<PluginOp, POCode> =
             KeyValueCollection::new(KV_VEC_MAX_ELEMS);
+        let mut has_anchor = [false; 3];
 
         for (name, _) in instance.exports.iter() {
             if let Ok(func) = instance.exports.get_typed_function(store, name) {
                 let func = func.clone();
 
                 let (po, a) = PluginOp::from_name(name);
+                has_anchor[a.index()] = true;
                 match pocodes.get_mut(&po) {
                     Some(poc) => match a {
                         Anchor::Pre => poc.pre = Some(func),
@@ -531,7 +582,7 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
             }
         }
 
-        pocodes
+        (pocodes, has_anchor)
     }
 
     /// Returns the first timer event related to this plugin.
@@ -556,13 +607,21 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
         Ok(())
     }
 
+    /// Returns an array indicating whether there is any provided bytecode
+    /// serving each anchor.
+    pub(crate) fn has_anchor(&self) -> [bool; 3] {
+        self.has_anchor
+    }
+
     /// Returns whether this plugin provides behavior for the requested
     /// `PluginOp` and `Anchor`.
     pub(crate) fn provides(&self, po: &PluginOp, anchor: Anchor) -> bool {
-        self.pocodes
-            .get(po)
-            .and_then(|poc| poc.get(anchor))
-            .is_some()
+        self.has_anchor[anchor.index()]
+            && self
+                .pocodes
+                .get(po)
+                .and_then(|poc| poc.get(anchor))
+                .is_some()
     }
 
     /// Initializes the plugin.
@@ -607,7 +666,7 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
         let func = func.ok_or(Error::NoPluginFunction)?;
         // debug!("Calling PO with param {:?}", params);
         match func.call(&mut self.store, self.plugin_state) {
-            Ok(res) if res == 0 => Ok((*self.env.as_ref(&self.store).outputs).clone()),
+            Ok(0) => Ok((*self.env.as_ref(&self.store).outputs).clone()),
             Ok(err) => Err(Error::OperationError(err)),
             Err(re) => Err(Error::RuntimeError(re)),
         }

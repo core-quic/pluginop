@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use pluginop_common::{
     quic::{ConnectionField, RecoveryField},
     APIResult, WASMLen,
@@ -13,6 +15,7 @@ pub enum CTPError {
     BadType,
     SerializeError,
     BadBytes,
+    FileError,
 }
 
 /// A trait that needs to be implemented by the host implementation to provide
@@ -522,6 +525,99 @@ fn cancel_timer_from_plugin<CTP: ConnectionToPlugin>(
     }
 }
 
+fn get_unix_instant_from_plugin<CTP: ConnectionToPlugin>(
+    env: FunctionEnvMut<Env<CTP>>,
+    res_ptr: WasmPtr<u8>,
+    res_len: WASMLen,
+) -> APIResult {
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -2,
+    };
+    let view = memory.view(&env);
+    let now = unix_time::Instant::now();
+    // Sanity check to avoid memory overwrite.
+    match bincode::serialized_size(&now) {
+        Ok(l) if l > res_len.into() => return -4,
+        Err(_) => return -5,
+        _ => {}
+    };
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked_mut() };
+    match bincode::serialize_into(&mut memory_slice[res_ptr.offset() as usize..], &now) {
+        Ok(()) => 0,
+        Err(_) => -6,
+    }
+}
+
+fn create_file_from_plugin<CTP: ConnectionToPlugin>(
+    mut env: FunctionEnvMut<Env<CTP>>,
+    path_ptr: WasmPtr<u8>,
+    path_len: WASMLen,
+) -> APIResult {
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -2,
+    };
+    let view = memory.view(&env);
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked() };
+    let path: String = match std::str::from_utf8(
+        &memory_slice[path_ptr.offset() as usize..(path_ptr.offset() + path_len) as usize],
+    ) {
+        Ok(p) => p.to_string(),
+        Err(_) => return -3,
+    };
+    println!("Path is {}", path);
+    match env.data_mut().create_file_with_path(Path::new(&path)) {
+        Ok(fd) => fd,
+        Err(_) => -4,
+    }
+}
+
+fn write_file_from_plugin<CTP: ConnectionToPlugin>(
+    env: FunctionEnvMut<Env<CTP>>,
+    fd: i64,
+    ptr: WasmPtr<u8>,
+    ptr_len: WASMLen,
+) -> i64 {
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -2,
+    };
+    let view = memory.view(&env);
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked() };
+    match env.data().write_to_file(
+        fd,
+        &memory_slice[ptr.offset() as usize..(ptr.offset() + ptr_len) as usize],
+    ) {
+        Ok(w) => w as i64,
+        Err(_) => -3,
+    }
+}
+
 macro_rules! exports_insert {
     ($e:ident, $s:ident, $env:ident, $f:ident) => {
         $e.insert(stringify!($f), Function::new_typed_with_env($s, $env, $f));
@@ -550,6 +646,9 @@ pub fn get_imports_with<CTP: ConnectionToPlugin>(
     exports_insert!(exports, store, env, register_from_plugin);
     exports_insert!(exports, store, env, set_timer_from_plugin);
     exports_insert!(exports, store, env, cancel_timer_from_plugin);
+    exports_insert!(exports, store, env, get_unix_instant_from_plugin);
+    exports_insert!(exports, store, env, create_file_from_plugin);
+    exports_insert!(exports, store, env, write_file_from_plugin);
 
     let mut imports = Imports::new();
     imports.register_namespace("env", exports);

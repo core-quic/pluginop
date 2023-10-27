@@ -26,7 +26,7 @@ impl<T: ?Sized> RawPtr<T> {
 
 impl<T: ?Sized> Clone for RawPtr<T> {
     fn clone(&self) -> Self {
-        Self { inner: self.inner }
+        *self
     }
 }
 
@@ -93,7 +93,7 @@ impl<T: ?Sized> RawMutPtr<T> {
 
 impl<T: ?Sized> Clone for RawMutPtr<T> {
     fn clone(&self) -> Self {
-        Self { inner: self.inner }
+        *self
     }
 }
 

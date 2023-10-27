@@ -87,6 +87,7 @@ fn is_result_unit(ty: &syn::Type) -> bool {
 fn get_param_block(
     args: &Punctuated<FnArg, syn::token::Comma>,
     ignore: Option<Ident>,
+    with_octets: bool,
 ) -> proc_macro2::TokenStream {
     let args_code: Vec<proc_macro2::TokenStream> = args
         .iter()
@@ -94,6 +95,7 @@ fn get_param_block(
             FnArg::Typed(pt) => {
                 let pat = &pt.pat;
                 match has_octets(pt) {
+                    (true, _, true) if !with_octets => None,
                     (true, false, true) => Some(quote!( OctetsPtr::from(#pat).into_with_ph(ph) )),
                     (true, true, true) => Some(quote!( OctetsMutPtr::from(#pat).into_with_ph(ph) )),
                     (true, _, false) => panic!("Octets argument must be mutable"),
@@ -114,7 +116,7 @@ fn get_param_block(
         })
         .collect();
     quote!(
-        &[
+        [
             #(#args_code ,)*
         ]
     )
@@ -218,7 +220,8 @@ fn get_out_block(
     let fn_block = &base_fn.block;
     let fn_output = &base_fn.sig.output;
     let fn_name_internal = format_ident!("__{}__", fn_name);
-    let param_code = get_param_block(fn_inputs, None);
+    let param_code = get_param_block(fn_inputs, None, true);
+    let param_code_prepost = get_param_block(fn_inputs, None, false);
 
     quote! {
         fn #fn_name_internal(#fn_inputs) #fn_output {
@@ -233,15 +236,39 @@ fn get_out_block(
             use pluginop::octets::OctetsMutPtr;
             use pluginop::octets::OctetsPtr;
             let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph_mut());
-            if let Some(ph) = ph.filter(|ph| ph.provides(& #po, pluginop::common::Anchor::Replace)) {
-                let params = #param_code;
-                let res = ph.call(
-                    & #po,
-                    params,
-                );
-                ph.clear_bytes_content();
+            if let Some(ph) = ph {
+                if ph.provides(& #po, pluginop::common::Anchor::Replace) {
+                    let params = & #param_code;
+                    let res = ph.call(
+                        & #po,
+                        params,
+                    );
+                    ph.clear_bytes_content();
 
-                #ret_block
+                    #ret_block
+                } else {
+                    let has_pre = ph.provides(& #po, pluginop::common::Anchor::Pre);
+                    let has_post = ph.provides(& #po, pluginop::common::Anchor::Post);
+                    let params = if has_pre || has_post { Some(#param_code_prepost) } else { None };
+                    if has_pre {
+                        ph.call_direct(
+                            & #po,
+                            pluginop::common::Anchor::Pre,
+                            params.as_ref().unwrap(),
+                        ).ok();
+                    }
+                    let ret = self.#fn_name_internal(#(#fn_args,)*);
+                    if has_post {
+                        if let Some(ph) = self.get_pluginizable_connection().map(|pc| pc.get_ph_mut()) {
+                            ph.call_direct(
+                                & #po,
+                                pluginop::common::Anchor::Post,
+                                params.as_ref().unwrap(),
+                            ).ok();
+                        }
+                    }
+                    ret
+                }
             } else {
                 self.#fn_name_internal(#(#fn_args,)*)
             }
@@ -279,7 +306,8 @@ fn get_out_param_block(
     let fn_name = &base_fn.sig.ident;
     let fn_block = &base_fn.block;
     let fn_name_internal = format_ident!("__{}__", fn_name);
-    let param_code = get_param_block(fn_inputs, Some(param.clone()));
+    let param_code = get_param_block(fn_inputs, Some(param.clone()), true);
+    let param_code_prepost = get_param_block(fn_inputs, Some(param.clone()), false);
 
     quote! {
         #[allow(unused_variables)]
@@ -294,15 +322,39 @@ fn get_out_param_block(
             use pluginop::octets::OctetsMutPtr;
             use pluginop::octets::OctetsPtr;
             let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph_mut());
-            if let Some(ph) = ph.filter(|ph| ph.provides(& #po(#param), pluginop::common::Anchor::Replace)) {
-                let params = #param_code;
-                let res = ph.call(
-                    & #po(#param),
-                    params,
-                );
-                ph.clear_bytes_content();
+            if let Some(ph) = ph {
+                if ph.provides(& #po(#param), pluginop::common::Anchor::Replace) {
+                    let params = & #param_code;
+                    let res = ph.call(
+                        & #po(#param),
+                        params,
+                    );
+                    ph.clear_bytes_content();
 
-                #ret_block
+                    #ret_block
+                } else {
+                    let has_pre = ph.provides(& #po(#param), pluginop::common::Anchor::Pre);
+                    let has_post = ph.provides(& #po(#param), pluginop::common::Anchor::Post);
+                    let params = if has_pre || has_post { Some(#param_code_prepost) } else { None };
+                    if has_pre {
+                        ph.call_direct(
+                            & #po(#param),
+                            pluginop::common::Anchor::Pre,
+                            params.as_ref().unwrap(),
+                        ).ok();
+                    }
+                    let ret = self.#fn_name_internal(#(#fn_args,)*);
+                    if has_post {
+                        if let Some(ph) = self.get_pluginizable_connection().map(|pc| pc.get_ph_mut()) {
+                            ph.call_direct(
+                                & #po(#param),
+                                pluginop::common::Anchor::Post,
+                                params.as_ref().unwrap(),
+                            ).ok();
+                        }
+                    }
+                    ret
+                }
             } else {
                 self.#fn_name_internal(#(#fn_args,)*)
             }
