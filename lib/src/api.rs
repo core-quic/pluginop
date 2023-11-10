@@ -583,10 +583,9 @@ fn create_file_from_plugin<CTP: ConnectionToPlugin>(
         Err(_) => return -3,
     };
     println!("Path is {}", path);
-    match env.data_mut().create_file_with_path(Path::new(&path)) {
-        Ok(fd) => fd,
-        Err(_) => -4,
-    }
+    env.data_mut()
+        .create_file_with_path(Path::new(&path))
+        .unwrap_or(-4)
 }
 
 fn write_file_from_plugin<CTP: ConnectionToPlugin>(
