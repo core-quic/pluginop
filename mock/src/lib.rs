@@ -702,4 +702,21 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), [PluginVal::Bool(true)]);
     }
+
+    #[test]
+    fn poctl() {
+        let mut pcd =
+            PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
+        let path = "../tests/poctl/poctl.wasm".to_string();
+        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        assert!(ok.is_ok());
+        let ph = pcd.0.get_ph_mut();
+        let (one, two) = (1_i64.into_with_ph(ph), 2_i64.into_with_ph(ph));
+        let res = ph.poctl(1, &[one, two]);
+        assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), [PluginVal::I64(3)]);
+        let res = ph.poctl(2, &[one, two]);
+        assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), [PluginVal::I64(-1)]);
+    }
 }
