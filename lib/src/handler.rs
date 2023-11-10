@@ -354,4 +354,9 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
 
         self.call_internal(None /* pod */, po, params)
     }
+
+    /// Invokes a plugin operation control operation.
+    pub fn poctl(&mut self, id: u64, params: &[PluginVal]) -> Result<Vec<PluginVal>, Error> {
+        self.call(&PluginOp::PluginControl(id), params)
+    }
 }
