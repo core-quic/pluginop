@@ -306,7 +306,7 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
     }
 
     fn timeout(&self) -> Option<Instant> {
-        self.timer_events.get(0).map(|r| r.at)
+        self.timer_events.first().map(|r| r.at)
     }
 
     pub fn insert_timer_event(&mut self, v: TimerEvent) {
@@ -321,7 +321,7 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
     }
 
     pub fn pop_timer_event_if_earlier_than(&mut self, t: Instant) -> Option<TimerEvent> {
-        if let Some(te) = self.timer_events.get(0) {
+        if let Some(te) = self.timer_events.first() {
             if te.at <= t {
                 // This is safe since we just checked that such an element exists.
                 // Note that the Vec is still sorted.
