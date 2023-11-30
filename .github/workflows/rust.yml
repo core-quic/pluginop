@@ -23,7 +23,7 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
     - name: Clippy + code coverage generation
-      run: cargo clippy -- -D warnings && cargo +nightly tarpaulin --verbose --all-features --ignore-tests --engine llvm --workspace -exclude pluginop-wasm --exclude-files lib.rs main.rs mod.rs --out Xml
+      run: cargo clippy -- -D warnings && cargo +nightly tarpaulin --verbose --all-features --ignore-tests --engine llvm --workspace --exclude pluginop-wasm --exclude-files lib.rs main.rs mod.rs --out Xml
     - name: Upload coverage reports to Codecov with GitHub Action
       uses: codecov/codecov-action@v3
       with:

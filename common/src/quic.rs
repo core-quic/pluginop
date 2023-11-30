@@ -198,8 +198,8 @@ pub enum RangeSetField {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[repr(C)]
 pub enum PacketNumberSpaceField {
-    /// TODO Write doc
-    ReceivedPacketNeedAck(RangeSetField),
+    /// Whether there is unacknowledged received packets, as a `bool`.
+    ReceivedPacketNeedAck,
     /// Boolean indicating if a ACK frame must be sent.
     AckEllicited,
     /// The next packet number to be sent, as a `u64`.

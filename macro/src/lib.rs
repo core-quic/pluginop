@@ -2,7 +2,7 @@ use darling::FromMeta;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input, punctuated::Punctuated, AttributeArgs, FnArg, GenericArgument, Ident,
+    parse_macro_input, punctuated::Punctuated, AttributeArgs, Expr, FnArg, GenericArgument, Ident,
     ItemFn, Pat, PatType, Path, ReturnType, Type,
 };
 
@@ -209,6 +209,7 @@ fn get_ret_result_block(fn_output_type: &ReturnType) -> proc_macro2::TokenStream
 fn get_out_block(
     base_fn: &ItemFn,
     po: &Path,
+    value: Option<Expr>,
     ret_block: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let fn_args = extract_arg_idents(base_fn.sig.inputs.clone());
@@ -223,7 +224,14 @@ fn get_out_block(
     let param_code = get_param_block(fn_inputs, None, true);
     let param_code_prepost = get_param_block(fn_inputs, None, false);
 
+    let po_code = if let Some(v) = value {
+        quote! { #po ( #v ) }
+    } else {
+        quote! { #po }
+    };
+
     quote! {
+        #[allow(unused_variables)]
         fn #fn_name_internal(#fn_inputs) #fn_output {
             #fn_block
         }
@@ -237,22 +245,22 @@ fn get_out_block(
             use pluginop::octets::OctetsPtr;
             let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph_mut());
             if let Some(ph) = ph {
-                if ph.provides(& #po, pluginop::common::Anchor::Replace) {
+                if ph.provides(& #po_code, pluginop::common::Anchor::Replace) {
                     let params = & #param_code;
                     let res = ph.call(
-                        & #po,
+                        & #po_code,
                         params,
                     );
                     ph.clear_bytes_content();
 
                     #ret_block
                 } else {
-                    let has_pre = ph.provides(& #po, pluginop::common::Anchor::Pre);
-                    let has_post = ph.provides(& #po, pluginop::common::Anchor::Post);
+                    let has_pre = ph.provides(& #po_code, pluginop::common::Anchor::Pre);
+                    let has_post = ph.provides(& #po_code, pluginop::common::Anchor::Post);
                     let params = if has_pre || has_post { Some(#param_code_prepost) } else { None };
                     if has_pre {
                         ph.call_direct(
-                            & #po,
+                            & #po_code,
                             pluginop::common::Anchor::Pre,
                             params.as_ref().unwrap(),
                         ).ok();
@@ -261,7 +269,7 @@ fn get_out_block(
                     if has_post {
                         if let Some(ph) = self.get_pluginizable_connection().map(|pc| pc.get_ph_mut()) {
                             ph.call_direct(
-                                & #po,
+                                & #po_code,
                                 pluginop::common::Anchor::Post,
                                 params.as_ref().unwrap(),
                             ).ok();
@@ -362,21 +370,28 @@ fn get_out_param_block(
     }
 }
 
+/// Arguments that can be passed through the `protoop` macro. See the
+/// documentation of the macro `protoop` for more details.
+#[derive(Debug, FromMeta)]
+struct MacroSimpleArgs {
+    po: Path,
+    value: Option<Expr>,
+}
+
 #[proc_macro_attribute]
 pub fn pluginop(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attrs = parse_macro_input!(attr as AttributeArgs);
-    let po = match &attrs[0] {
-        syn::NestedMeta::Meta(m) => match m {
-            syn::Meta::Path(po) => po,
-            syn::Meta::List(_) => todo!("meta list"),
-            syn::Meta::NameValue(_) => todo!("meta nv"),
-        },
-        syn::NestedMeta::Lit(_) => todo!("lit"),
+    let attrs_args = match MacroSimpleArgs::from_list(&attrs) {
+        Ok(v) => v,
+        Err(e) => return TokenStream::from(e.write_errors()),
     };
+
+    let po = attrs_args.po;
+    let value = attrs_args.value;
     let base_fn = parse_macro_input!(item as ItemFn);
 
     let ret_block = get_ret_block(&base_fn.sig.output);
-    let out = get_out_block(&base_fn, po, &ret_block);
+    let out = get_out_block(&base_fn, &po, value, &ret_block);
 
     // println!("output is\n{}", out);
 
@@ -386,18 +401,17 @@ pub fn pluginop(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn pluginop_result(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attrs = parse_macro_input!(attr as AttributeArgs);
-    let po = match &attrs[0] {
-        syn::NestedMeta::Meta(m) => match m {
-            syn::Meta::Path(po) => po,
-            syn::Meta::List(_) => todo!("meta list"),
-            syn::Meta::NameValue(_) => todo!("meta nv"),
-        },
-        syn::NestedMeta::Lit(_) => todo!("lit"),
+    let attrs_args = match MacroSimpleArgs::from_list(&attrs) {
+        Ok(v) => v,
+        Err(e) => return TokenStream::from(e.write_errors()),
     };
+
+    let po = attrs_args.po;
+    let value = attrs_args.value;
     let base_fn = parse_macro_input!(item as ItemFn);
 
     let ret_block = get_ret_result_block(&base_fn.sig.output);
-    let out = get_out_block(&base_fn, po, &ret_block);
+    let out = get_out_block(&base_fn, &po, value, &ret_block);
 
     // println!("output is\n{}", out);
 
