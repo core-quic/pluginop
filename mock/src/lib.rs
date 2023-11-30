@@ -75,17 +75,17 @@ impl From<i64> for Error {
 }
 
 impl ConnectionDummy {
-    #[pluginop(PluginOp::UpdateRtt)]
+    #[pluginop(po = "PluginOp::UpdateRtt")]
     fn update_rtt(&mut self, latest_rtt: Duration, _ack_delay: Duration, _now: Instant) {
         self.srtt = latest_rtt;
     }
 
-    #[pluginop(PluginOp::Test)]
+    #[pluginop(po = "PluginOp::Test")]
     fn test1(&mut self, _latest_rtt: Duration) -> u64 {
         42
     }
 
-    #[pluginop_result(PluginOp::Test)]
+    #[pluginop_result(po = "PluginOp::Test")]
     fn test2(&mut self, _latest_rtt: Duration) -> Result<(), Error> {
         Ok(())
     }
