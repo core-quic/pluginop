@@ -81,6 +81,8 @@ extern "C" {
     fn cancel_timer_from_plugin(id: u64) -> APIResult;
     /* Gets the current UNIX time */
     fn get_unix_instant_from_plugin(res_ptr: WASMPtr, res_len: WASMLen) -> APIResult;
+    /* Fully enable the plugin operations */
+    fn enable_from_plugin();
     // ----- TODOs -----
     /* Functions for the buffer to read */
     fn buffer_get_bytes_from_plugin(ptr: WASMPtr, len: WASMLen) -> APIResult;
@@ -375,6 +377,13 @@ impl PluginEnv {
         }
         let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), size) };
         bincode::deserialize(slice).map_err(|_| Error::SerializeError)
+    }
+
+    /// Fully enable the plugin operations.
+    /// Such a call is needed to enable plugin operations that are not
+    /// `always_enabled()`.
+    pub fn enable(&self) {
+        unsafe { enable_from_plugin() };
     }
 }
 
