@@ -44,6 +44,20 @@ impl POCode {
     }
 }
 
+pub struct TLSBeforeQUIC<CTP: ConnectionToPlugin> {
+    pub ph: PluginHandler<CTP>,
+    _pin: PhantomPinned,
+}
+
+impl<CTP: ConnectionToPlugin> TLSBeforeQUIC<CTP> {
+    pub fn new(exports_func: fn(&mut Store, &FunctionEnv<Env<CTP>>) -> Exports) -> Box<Self> {
+        Box::new(Self {
+            ph: PluginHandler::new(exports_func),
+            _pin: PhantomPinned,
+        })
+    }
+}
+
 pub struct PluginizableConnection<CTP: ConnectionToPlugin> {
     pub ph: PluginHandler<CTP>,
     pub conn: CTP,
