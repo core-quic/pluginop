@@ -42,7 +42,7 @@ impl<T: ?Sized> Deref for RawPtr<T> {
 
 impl<T: ?Sized> PartialEq for RawPtr<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner
+        std::ptr::eq(self.inner, other.inner)
     }
 }
 
@@ -115,7 +115,7 @@ impl<T: ?Sized> DerefMut for RawMutPtr<T> {
 
 impl<T: ?Sized> PartialEq for RawMutPtr<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner
+        std::ptr::eq(self.inner, other.inner)
     }
 }
 
