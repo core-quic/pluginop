@@ -149,26 +149,29 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         true
     }
 
-    /// Attaches a new plugin whose bytecode is accessible through the provided path. Returns `true`
-    /// if the insertion succeeded, `false` otherwise.
-    ///
-    /// If the insertion succeeds and the plugin provides an `init` function as a protocol
-    /// operation, this function calls it. This can be useful to, e.g., initialize a plugin-specific
-    /// structure or register new frames.
-    pub fn insert_plugin(&mut self, plugin_fname: &PathBuf) -> Result<(), Error> {
-        if self.conn.is_null() {
-            error!("Trying to insert a plugin without set the pluginizable connection pointer");
-            return Err(Error::InternalError(
-                "Trying to insert a plugin without set the pluginizable connection pointer"
-                    .to_string(),
-            ));
-        }
-        let plugin = Plugin::new(plugin_fname, self)?;
+    pub(crate) fn insert_plugin_internal(
+        &mut self,
+        plugin_fname: &PathBuf,
+        force_enable: bool,
+    ) -> Result<(), Error> {
+        // Due to the need of two-step plugin loading, we need to relax this check.
+        // API calls will fail, but never by crashing.
+        // if self.conn.is_null() {
+        //     error!("Trying to insert a plugin without set the pluginizable connection pointer");
+        //     return Err(Error::InternalError(
+        //         "Trying to insert a plugin without set the pluginizable connection pointer"
+        //             .to_string(),
+        //     ));
+        // }
+        let mut plugin = Plugin::new(plugin_fname, self)?;
         // Cache whether anchors are provided.
         self.has_anchor
             .iter_mut()
             .zip(plugin.has_anchor())
             .for_each(|(i, e)| *i |= e);
+        if force_enable {
+            plugin.force_enable();
+        }
         self.plugins.push(plugin);
         // Now the plugin is at its definitive area in memory, so we can initialize it.
         self.plugins
@@ -176,6 +179,21 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
             .ok_or(Error::PluginLoadingError("PluginNotInserted".to_string()))?
             .initialize()
             .map_err(|e| Error::PluginLoadingError(format!("{:?}", e)))
+    }
+
+    /// Attaches a new plugin whose bytecode is accessible through the provided path. Returns `true`
+    /// if the insertion succeeded, `false` otherwise.
+    ///
+    /// If the insertion succeeds and the plugin provides an `init` function as a protocol
+    /// operation, this function calls it. This can be useful to, e.g., initialize a plugin-specific
+    /// structure or register new frames.
+    pub fn insert_plugin(&mut self, plugin_fname: &PathBuf) -> Result<(), Error> {
+        self.insert_plugin_internal(plugin_fname, false)
+    }
+
+    /// To be used in testing code only.
+    pub fn insert_plugin_testing(&mut self, plugin_fname: &PathBuf) -> Result<(), Error> {
+        self.insert_plugin_internal(plugin_fname, true)
     }
 
     /// Returns whether there is any POST anchor in the handler.

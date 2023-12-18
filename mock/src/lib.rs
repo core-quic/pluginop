@@ -372,7 +372,7 @@ mod tests {
     use pluginop::{
         common::{
             quic::{self, Frame, MaxDataFrame, QVal},
-            PluginOp, PluginVal,
+            Anchor, PluginOp, PluginVal,
         },
         octets::{Octets, OctetsMut},
         plugin::Env,
@@ -400,7 +400,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/simple-wasm/simple_wasm.wasm".to_string();
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
         assert!(ok.is_ok());
         let (po, a) = PluginOp::from_name("simple_call");
         assert!(pcd.0.get_ph().provides(&po, a));
@@ -415,7 +415,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/memory-allocation/memory_allocation.wasm".to_string();
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
         assert!(ok.is_ok());
         let (po, a) = PluginOp::from_name("check_data");
         assert!(pcd.get_ph().provides(&po, a));
@@ -440,7 +440,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = path.to_string();
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
         assert!(ok.is_ok());
         let (po, a) = PluginOp::from_name("get_mult_value");
         assert!(pcd.get_ph().provides(&po, a));
@@ -482,7 +482,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/input-outputs/input_outputs.wasm".to_string();
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
         assert!(ok.is_ok());
         let (po, a) = PluginOp::from_name("get_calc_value");
         assert!(pcd.get_ph().provides(&po, a));
@@ -538,8 +538,9 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/increase-max-data/increase_max_data.wasm".to_string(); // "../tests/increase-max-data/increase_max_data.wasm".to_string();
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
         assert!(ok.is_ok());
+
         let (po, a) = PluginOp::from_name("process_frame_10");
         assert!(pcd.get_ph().provides(&po, a));
         let old_value = pcd.conn.max_tx_data;
@@ -573,7 +574,7 @@ mod tests {
         assert_eq!(pcd.conn.max_tx_data, 2000);
         // Fix this with the plugin.
         let path = "../tests/increase-max-data/increase_max_data.wasm".to_string();
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
         assert!(ok.is_ok());
         pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 4000 }));
         assert_eq!(pcd.conn.max_tx_data, 4000);
@@ -591,7 +592,7 @@ mod tests {
             Instant::now(),
         );
         let path = "../tests/macro-simple/macro_simple.wasm".to_string();
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
         assert!(ok.is_ok());
         pcd.update_rtt(
             Duration::from_millis(125),
@@ -630,7 +631,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/max-data-frame/max_data_frame.wasm".to_string();
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
         assert!(ok.is_ok());
         let mut orig_buf = [0; 1350];
         let mut buf = OctetsMut::with_slice(&mut orig_buf);
@@ -648,7 +649,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/super-frame/super_frame.wasm".to_string();
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
         assert!(ok.is_ok());
         let mut orig_buf = [0; 1350];
         let mut buf = OctetsMut::with_slice(&mut orig_buf);
@@ -666,7 +667,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/timer-usage/timer_usage.wasm".to_string();
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
         assert!(ok.is_ok());
         let (po, a) = PluginOp::from_name("launch_timers");
         assert!(pcd.0.get_ph().provides(&po, a));
@@ -708,7 +709,7 @@ mod tests {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
         let path = "../tests/poctl/poctl.wasm".to_string();
-        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
         assert!(ok.is_ok());
         let ph = pcd.0.get_ph_mut();
         let (one, two) = (1_i64.into_with_ph(ph), 2_i64.into_with_ph(ph));
@@ -718,5 +719,35 @@ mod tests {
         let res = ph.poctl(2, &[one, two]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), [PluginVal::I64(-1)]);
+    }
+
+    #[test]
+    fn enable() {
+        let mut pcd =
+            PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
+        let path = "../tests/enable/enable.wasm".to_string();
+        let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+        assert!(ok.is_ok());
+        // Initially, this call is not enabled.
+        let (po, a) = PluginOp::from_name("simple_call");
+        assert!(!pcd.0.get_ph().provides(&po, a));
+        // This is an always enabled PO, and calling it will (from the WASM) enable all plugin
+        // operations.
+        let (po, a) = (
+            PluginOp::DecodeTransportParameter(0xAAAAAAAA),
+            Anchor::Replace,
+        );
+        assert!(pcd.0.get_ph().provides(&po, a));
+        let ph = pcd.0.get_ph_mut();
+        let res = ph.call(&po, &[]);
+        assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), []);
+        // With the previous call, this is now enabled.
+        let (po, a) = PluginOp::from_name("simple_call");
+        assert!(pcd.0.get_ph().provides(&po, a));
+        let ph = pcd.0.get_ph_mut();
+        let res = ph.call(&po, &[]);
+        assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), []);
     }
 }

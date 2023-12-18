@@ -617,6 +617,10 @@ fn write_file_from_plugin<CTP: ConnectionToPlugin>(
     }
 }
 
+fn enable_from_plugin<CTP: ConnectionToPlugin>(mut env: FunctionEnvMut<Env<CTP>>) {
+    env.data_mut().enable();
+}
+
 macro_rules! exports_insert {
     ($e:ident, $s:ident, $env:ident, $f:ident) => {
         $e.insert(stringify!($f), Function::new_typed_with_env($s, $env, $f));
@@ -648,6 +652,7 @@ pub fn get_imports_with<CTP: ConnectionToPlugin>(
     exports_insert!(exports, store, env, get_unix_instant_from_plugin);
     exports_insert!(exports, store, env, create_file_from_plugin);
     exports_insert!(exports, store, env, write_file_from_plugin);
+    exports_insert!(exports, store, env, enable_from_plugin);
 
     let mut imports = Imports::new();
     imports.register_namespace("env", exports);

@@ -37,7 +37,7 @@ fn memory_allocation_bench() {
     let path = [BASE, "/tests/memory-allocation/memory_allocation.wasm"]
         .join("")
         .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
     assert!(ok.is_ok());
     let (po, a) = PluginOp::from_name("check_data");
     assert!(pcd.get_ph().provides(&po, a));
@@ -169,7 +169,7 @@ fn first_pluginop() {
     let path = [BASE, "/tests/increase-max-data/increase_max_data.wasm"]
         .join("")
         .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
     assert!(ok.is_ok());
     pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 4000 }));
     assert_eq!(pcd.conn.max_tx_data, 4000);
@@ -188,7 +188,7 @@ fn macro_simple() {
     let path = [BASE, "/tests/macro-simple/macro_simple.wasm"]
         .join("")
         .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
     assert!(ok.is_ok());
     pcd.update_rtt(
         Duration::from_millis(125),
@@ -230,7 +230,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let path = [BASE, "/tests/simple-wasm/simple_wasm.wasm"]
         .join("")
         .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
     assert!(ok.is_ok());
     let (po, a) = PluginOp::from_name("simple_call");
     assert!(pcd.get_ph().provides(&po, a));
@@ -248,7 +248,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let path = [BASE, "/tests/static-memory/static_memory.wasm"]
         .join("")
         .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
     assert!(ok.is_ok());
     c.bench_function("static memory", |b| b.iter(|| static_memory(&mut pcd)));
 
@@ -258,7 +258,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let path = [BASE, "/tests/inputs-support/inputs_support.wasm"]
         .join("")
         .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
     assert!(ok.is_ok());
     c.bench_function("inputs support", |b| b.iter(|| static_memory(&mut pcd)));
 
@@ -268,7 +268,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let path = [BASE, "/tests/input-outputs/input_outputs.wasm"]
         .join("")
         .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
     assert!(ok.is_ok());
     c.bench_function("input outputs", |b| b.iter(|| input_outputs(&mut pcd)));
 
@@ -278,7 +278,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let path = [BASE, "/tests/increase-max-data/increase_max_data.wasm"]
         .join("")
         .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
     assert!(ok.is_ok());
     c.bench_function("increase-max-data", |b| {
         b.iter(|| increase_max_data(&mut pcd))
@@ -313,7 +313,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let path = [BASE, "/tests/max-data-frame/max_data_frame.wasm"]
         .join("")
         .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
     assert!(ok.is_ok());
     c.bench_function("max-data wasm send and receive", |b| {
         b.iter(|| max_data(&mut pcd, &mut orig_buf))
@@ -325,7 +325,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let path = [BASE, "/tests/super-frame/super_frame.wasm"]
         .join("")
         .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin(&path.into());
+    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
     assert!(ok.is_ok());
     c.bench_function("super-frame send and receive", |b| {
         b.iter(|| super_frame(&mut pcd, &mut orig_buf))

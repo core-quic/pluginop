@@ -234,6 +234,10 @@ pub struct Env<CTP: ConnectionToPlugin> {
     permissions: BTreeSet<Permission>,
     /// Whether the associated plugin was initialized or not.
     initialized: bool,
+    /// Initially, a plugin is only pre-loaded, i.e., only a very small subset of the
+    /// functions are enabled. The API enables the plugin to be fully loaded by using
+    /// a dedicated API call.
+    enabled: bool,
     /// The next timeout events to fire.
     timer_events: Vec<TimerEvent>,
     /// Contains the inputs specific to the called operation.
@@ -254,6 +258,7 @@ pub(crate) fn create_env<CTP: ConnectionToPlugin>(ph: RawMutPtr<PluginHandler<CT
         instance: Weak::new(),
         permissions: BTreeSet::new(),
         initialized: false,
+        enabled: false,
         timer_events: Vec::new(),
         inputs: Pin::new(PluginValArray::default()),
         outputs: Pin::new(PluginValArray::default()),
@@ -380,6 +385,11 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
             }
             None => Err(CTPError::FileError),
         }
+    }
+
+    /// Fully enable the plugin operations.
+    pub fn enable(&mut self) {
+        self.enabled = true;
     }
 }
 
@@ -617,6 +627,7 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
     /// `PluginOp` and `Anchor`.
     pub(crate) fn provides(&self, po: &PluginOp, anchor: Anchor) -> bool {
         self.has_anchor[anchor.index()]
+            && (self.env.as_ref(&self.store).enabled || po.always_enabled())
             && self
                 .pocodes
                 .get(po)
@@ -639,6 +650,11 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
         }
     }
 
+    /// Force-enable the plugin.
+    pub(crate) fn force_enable(&mut self) {
+        self.env.as_mut(&mut self.store).enable();
+    }
+
     /// Invokes the function called `function_name` with provided `params`.
     pub fn call(
         &mut self,
@@ -649,6 +665,10 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
         let env_mut = self.env.as_mut(&mut self.store);
         // Before launching any call, we should sanitize the running `env`.
         env_mut.sanitize();
+
+        if !env_mut.enabled && !po.always_enabled() {
+            return Err(Error::Disabled);
+        }
 
         for p in params {
             env_mut.inputs.push(*p);

@@ -127,6 +127,9 @@ pub enum Error {
     /// No default provided for the related `PluginOp`.
     NoDefault(PluginOp),
 
+    /// This plugin operation has been disabled.
+    Disabled,
+
     /// The plugin returned a non-zero error code.
     OperationError(i64),
 

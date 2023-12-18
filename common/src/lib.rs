@@ -36,6 +36,7 @@ pub enum ConversionError {
 // FIXME: move these protoops in their respective protocols.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, PartialOrd)]
 pub enum PluginOp {
+    // Operation that will always be called once the plugin got loaded.
     Init,
 
     // These derive from quic-invariants, from version.
@@ -219,6 +220,17 @@ impl PluginOp {
             name_array[..name.len()].copy_from_slice(name.as_bytes());
             (PluginOp::Other(name_array), anchor)
         }
+    }
+
+    /// Returns whether the plugin operation can be called, even if it is not fully
+    /// loaded.
+    pub fn always_enabled(&self) -> bool {
+        matches!(
+            self,
+            PluginOp::Init
+                | PluginOp::DecodeTransportParameter(_)
+                | PluginOp::WriteTransportParameter(_)
+        )
     }
 }
 
