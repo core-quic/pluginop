@@ -36,7 +36,7 @@ pub trait ConnectionToPlugin:
     /// Sets the related `RecoveryField` to the provided value, that was serialized with content
     /// `value`. It is this function responsibility to correctly convert the
     /// input to the right type.
-    fn set_recovery(&mut self, field: RecoveryField, value: &[u8]);
+    fn set_recovery(&mut self, field: RecoveryField, value: &[u8]) -> std::result::Result<(), CTPError>;
 }
 
 /// A trait that must be implemented on structures that have pluginization features. This notably

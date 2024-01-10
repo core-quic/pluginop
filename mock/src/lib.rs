@@ -26,7 +26,7 @@ impl ConnectionToPlugin for ConnectionDummy {
         todo!()
     }
 
-    fn set_recovery(&mut self, _: RecoveryField, _: &[u8]) {
+    fn set_recovery(&mut self, _: RecoveryField, _: &[u8]) -> std::result::Result<(), CTPError> {
         todo!()
     }
 
