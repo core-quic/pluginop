@@ -229,6 +229,7 @@ pub struct Env<CTP: ConnectionToPlugin> {
     /// The underlying plugin handler holding the plugin running this environment.
     ph: RawMutPtr<PluginHandler<CTP>>,
     /// The (weak) reference to the instance of the plugin. The value is set when
+    /// initializing the plugin.
     instance: Weak<Pin<Box<Instance>>>,
     /// The set of internal field permissions granted to the plugin.
     permissions: BTreeSet<Permission>,
