@@ -11,7 +11,7 @@ use pluginop::{
     Error,
 };
 use pluginop_mock::{ConnectionDummy, PluginizableConnectionDummy};
-use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
+use pluginop::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
 
 fn add_one(_: FunctionEnvMut<Env<ConnectionDummy>>, x: u64) -> u64 {
     x + 1

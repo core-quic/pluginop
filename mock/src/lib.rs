@@ -12,7 +12,7 @@ use pluginop::octets::{Octets, OctetsMut};
 use pluginop::plugin::Env;
 use pluginop::pluginop_macro::{pluginop, pluginop_param, pluginop_result, pluginop_result_param};
 use pluginop::{api::CTPError, ParentReferencer, PluginizableConnection};
-use wasmer::{Exports, FunctionEnv, Store};
+use pluginop::{Exports, FunctionEnv, Store};
 
 /// Dummy object
 pub struct ConnectionDummy {
@@ -378,7 +378,7 @@ mod tests {
         plugin::Env,
         Error, IntoWithPH,
     };
-    use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
+    use pluginop::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
 
     use crate::{ConnectionDummy, PluginizableConnectionDummy};
 

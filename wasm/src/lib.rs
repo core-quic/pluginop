@@ -440,7 +440,7 @@ mod todo {
         quic::{self, ConnectionId},
         APIResult, PluginOp, PluginVal, WASMLen, WASMPtr,
     };
-    use serde::{Deserialize};
+    use serde::Deserialize;
 
     use crate::{
         buffer_get_bytes_from_plugin, buffer_put_bytes_from_plugin, call_proto_op_from_plugin,
