@@ -22,11 +22,11 @@ pub struct ConnectionDummy {
 }
 
 impl ConnectionToPlugin for ConnectionDummy {
-    fn get_recovery(&self, _: &mut [u8], _: RecoveryField) -> bincode::Result<()> {
+    fn get_recovery(&self,_: RecoveryField, _: &mut [u8]) -> bincode::Result<()> {
         todo!()
     }
 
-    fn set_recovery(&mut self, _: RecoveryField, _: &[u8]) {
+    fn set_recovery(&mut self, _: RecoveryField, _: &[u8]) -> std::result::Result<(), CTPError> {
         todo!()
     }
 

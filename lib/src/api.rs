@@ -32,11 +32,11 @@ pub trait ConnectionToPlugin:
     fn set_connection(&mut self, field: ConnectionField, value: &[u8]) -> Result<(), CTPError>;
     /// Gets the related `RecoveryField` and writes it as a serialized value in `w`. It is up to the
     /// plugin to correctly handle the value and perform the serialization.
-    fn get_recovery(&self, w: &mut [u8], field: RecoveryField) -> bincode::Result<()>;
+    fn get_recovery(&self, field: RecoveryField, w: &mut [u8]) -> bincode::Result<()>;
     /// Sets the related `RecoveryField` to the provided value, that was serialized with content
     /// `value`. It is this function responsibility to correctly convert the
     /// input to the right type.
-    fn set_recovery(&mut self, field: RecoveryField, value: &[u8]);
+    fn set_recovery(&mut self, field: RecoveryField, value: &[u8]) -> std::result::Result<(), CTPError>;
 }
 
 /// A trait that must be implemented on structures that have pluginization features. This notably
@@ -326,7 +326,7 @@ fn get_connection_from_plugin<CTP: ConnectionToPlugin>(
     }
 }
 
-/// Gets a specific connection field.
+/// Sets a specific connection field.
 ///
 /// Function intended to be part of the Plugin API.
 fn set_connection_from_plugin<CTP: ConnectionToPlugin>(
@@ -621,6 +621,110 @@ fn enable_from_plugin<CTP: ConnectionToPlugin>(mut env: FunctionEnvMut<Env<CTP>>
     env.data_mut().enable();
 }
 
+/// Gets a specific recovery field.
+///
+/// Function intended to be part of the Plugin API.
+fn get_recovery_from_plugin<CTP: ConnectionToPlugin>(
+    mut env: FunctionEnvMut<Env<CTP>>,
+    field_ptr: WasmPtr<u8>,
+    field_len: WASMLen,
+    res_ptr: WasmPtr<u8>,
+    res_len: WASMLen,
+) -> i64 {
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -2,
+    };
+    let view = memory.view(&env);
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked_mut() };
+    // SAFETY:  Also, this won't increase the memory of the plugin,
+    // as the guest will preallocate the memory.
+    let memory_slice =
+        unsafe { std::slice::from_raw_parts_mut(memory_slice.as_mut_ptr(), memory_slice.len()) };
+    let field = match bincode::deserialize_from(
+        &memory_slice[field_ptr.offset() as usize..(field_ptr.offset() + field_len) as usize],
+    ) {
+        Ok(f) => f,
+        Err(_) => return -3,
+    };
+    let ph = if let Some(ph) = env.data_mut().get_ph() {
+        ph
+    } else {
+        return -4;
+    };
+    let conn = match ph.get_conn() {
+        Some(c) => c,
+        None => return -5,
+    };
+    match conn.get_conn().get_recovery(
+        field,
+        &mut memory_slice[res_ptr.offset() as usize..(res_ptr.offset() + res_len) as usize],
+    ) {
+        Ok(_) => 0,
+        Err(_) => -6,
+    }
+}
+
+/// Sets a specific connection field.
+///
+/// Function intended to be part of the Plugin API.
+fn set_recovery_from_plugin<CTP: ConnectionToPlugin>(
+    mut env: FunctionEnvMut<Env<CTP>>,
+    field_ptr: WasmPtr<u8>,
+    field_len: WASMLen,
+    val_ptr: WasmPtr<u8>,
+    val_len: WASMLen,
+) -> i64 {
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -2,
+    };
+    let view = memory.view(&env);
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked() };
+    // SAFETY:  Also, this won't increase the memory of the plugin,
+    // as the guest will preallocate the memory.
+    let memory_slice =
+        unsafe { std::slice::from_raw_parts(memory_slice.as_ptr(), memory_slice.len()) };
+    let field = match bincode::deserialize_from(
+        &memory_slice[field_ptr.offset() as usize..(field_ptr.offset() + field_len) as usize],
+    ) {
+        Ok(f) => f,
+        Err(_) => return -3,
+    };
+    let ph = if let Some(ph) = env.data_mut().get_ph() {
+        ph
+    } else {
+        return -4;
+    };
+    let conn = match ph.get_conn_mut() {
+        Some(c) => c,
+        None => return -5,
+    };
+    match conn.get_conn_mut().set_recovery(
+        field,
+        &memory_slice[val_ptr.offset() as usize..(val_ptr.offset() + val_len) as usize],
+    ) {
+        Ok(()) => 0,
+        Err(_) => -6,
+    }
+}
+
 macro_rules! exports_insert {
     ($e:ident, $s:ident, $env:ident, $f:ident) => {
         $e.insert(stringify!($f), Function::new_typed_with_env($s, $env, $f));
@@ -653,6 +757,8 @@ pub fn get_imports_with<CTP: ConnectionToPlugin>(
     exports_insert!(exports, store, env, create_file_from_plugin);
     exports_insert!(exports, store, env, write_file_from_plugin);
     exports_insert!(exports, store, env, enable_from_plugin);
+    exports_insert!(exports, store, env, get_recovery_from_plugin);
+    exports_insert!(exports, store, env, set_recovery_from_plugin);
 
     let mut imports = Imports::new();
     imports.register_namespace("env", exports);

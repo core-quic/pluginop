@@ -83,6 +83,13 @@ extern "C" {
     fn get_unix_instant_from_plugin(res_ptr: WASMPtr, res_len: WASMLen) -> APIResult;
     /* Fully enable the plugin operations */
     fn enable_from_plugin();
+    /* Sets a recovery field */
+    fn set_recovery_from_plugin(
+        field_ptr: WASMPtr,
+        field_len: WASMLen,
+        value_ptr: WASMPtr,
+        value_len: WASMLen,
+    ) -> APIResult;
     // ----- TODOs -----
     /* Functions for the buffer to read */
     fn buffer_get_bytes_from_plugin(ptr: WASMPtr, len: WASMLen) -> APIResult;
@@ -105,13 +112,6 @@ extern "C" {
         field_len: WASMLen,
         res_ptr: WASMPtr,
         res_len: WASMLen,
-    ) -> APIResult;
-    /* Sets a recovery field */
-    fn set_recovery_from_plugin(
-        field_ptr: WASMPtr,
-        field_len: WASMLen,
-        value_ptr: WASMPtr,
-        value_len: WASMLen,
     ) -> APIResult;
     /* Gets a sent packet field */
     fn get_sent_packet_from_plugin(
@@ -239,7 +239,7 @@ impl PluginEnv {
     }
 
     /// Gets a recovery field.
-    pub fn get_recovery<'de, T>(field: quic::RecoveryField) -> T
+    pub fn get_recovery<'de, T>(&self, field: quic::RecoveryField) -> T
     where
         T: Deserialize<'de>,
     {
@@ -255,6 +255,27 @@ impl PluginEnv {
         }
         let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
         bincode::deserialize(slice).expect("no error")
+    }
+
+    /// Sets a recovery field.
+    pub fn set_recovery<T>(&mut self, field: quic::RecoveryField, v: T) -> Result<()>
+    where
+        T: Into<PluginVal>,
+    {
+        let serialized_field = bincode::serialize(&field).map_err(|_| Error::SerializeError)?;
+        let serialized_value = bincode::serialize(&v.into()).map_err(|_| Error::SerializeError)?;
+        match unsafe {
+            set_recovery_from_plugin(
+                serialized_field.as_ptr() as WASMPtr,
+                serialized_field.len() as WASMLen,
+                serialized_value.as_ptr() as WASMPtr,
+                serialized_value.len() as WASMLen,
+            )
+        } {
+            0 => Ok(()),
+            _ => Err(Error::APICallError),
+        }
+        
     }
 
     /// Get a received packet field.
@@ -419,32 +440,15 @@ mod todo {
         quic::{self, ConnectionId},
         APIResult, PluginOp, PluginVal, WASMLen, WASMPtr,
     };
-    use serde::{Deserialize, Serialize};
+    use serde::{Deserialize};
 
     use crate::{
         buffer_get_bytes_from_plugin, buffer_put_bytes_from_plugin, call_proto_op_from_plugin,
-        generate_connection_id_from_plugin, get_sent_packet_from_plugin, set_recovery_from_plugin,
+        generate_connection_id_from_plugin, get_sent_packet_from_plugin,
         PluginEnv, SIZE,
     };
 
     impl PluginEnv {
-        /// Sets a recovery field.
-        fn set_recovery<T>(field: quic::RecoveryField, v: T)
-        where
-            T: Serialize,
-        {
-            let serialized_field = bincode::serialize(&field).expect("serialized field");
-            let serialized_value = bincode::serialize(&v).expect("serialized value");
-            unsafe {
-                set_recovery_from_plugin(
-                    serialized_field.as_ptr() as WASMPtr,
-                    serialized_field.len() as WASMLen,
-                    serialized_value.as_ptr() as WASMPtr,
-                    serialized_value.len() as WASMLen,
-                );
-            }
-        }
-
         /// Gets a sent packet field.
         fn get_sent_packet<'de, T>(field: quic::SentPacketField) -> T
         where
