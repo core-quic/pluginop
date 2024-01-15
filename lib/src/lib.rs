@@ -301,4 +301,4 @@ pub use pluginop_macro;
 pub use pluginop_octets as octets;
 
 // Also need to expose structures to create exports.
-pub use wasmer::{Exports, FunctionEnv, Store};
+pub use wasmer::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
