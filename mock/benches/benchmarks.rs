@@ -10,8 +10,8 @@ use pluginop::{
     plugin::Env,
     Error,
 };
-use pluginop_mock::{ConnectionDummy, PluginizableConnectionDummy};
 use pluginop::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
+use pluginop_mock::{ConnectionDummy, PluginizableConnectionDummy};
 
 fn add_one(_: FunctionEnvMut<Env<ConnectionDummy>>, x: u64) -> u64 {
     x + 1

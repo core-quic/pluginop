@@ -22,7 +22,11 @@ pub struct ConnectionDummy {
 }
 
 impl ConnectionToPlugin for ConnectionDummy {
-    fn get_recovery(&self,_: RecoveryField, _: &mut [u8]) -> bincode::Result<()> {
+    fn get_recovery<'a>(
+        &self,
+        _: RecoveryField,
+        _: &'a mut [u8],
+    ) -> postcard::Result<&'a mut [u8]> {
         todo!()
     }
 
@@ -30,16 +34,20 @@ impl ConnectionToPlugin for ConnectionDummy {
         todo!()
     }
 
-    fn get_connection(&self, field: ConnectionField, w: &mut [u8]) -> bincode::Result<()> {
+    fn get_connection<'a>(
+        &self,
+        field: ConnectionField,
+        w: &'a mut [u8],
+    ) -> postcard::Result<&'a mut [u8]> {
         let pv: PluginVal = match field {
             ConnectionField::MaxTxData => self.max_tx_data.into(),
             _ => todo!(),
         };
-        bincode::serialize_into(w, &pv)
+        postcard::to_slice(&pv, w)
     }
 
     fn set_connection(&mut self, field: ConnectionField, r: &[u8]) -> Result<(), CTPError> {
-        let pv: PluginVal = bincode::deserialize_from(r).map_err(|_| CTPError::SerializeError)?;
+        let pv: PluginVal = postcard::from_bytes(r).map_err(|_| CTPError::SerializeError)?;
         match field {
             ConnectionField::MaxTxData => {
                 self.max_tx_data = pv.try_into().map_err(|_| CTPError::BadType)?
