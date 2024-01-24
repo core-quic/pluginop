@@ -13,7 +13,7 @@ wasmer = "4"
 wasmer-compiler-singlepass = "4"
 pluginop-common = { path = "../common" }
 pluginop-macro = { path = "../macro" }
-bincode = "1"
+postcard = { version = "1", features = [] }
 fnv = "1"
 getrandom = "0.2"
 unix-time = "0.1"

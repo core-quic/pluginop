@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 pluginop = { path = "../lib" }
-bincode = "1"
+postcard = "1"
 
 [dev-dependencies]
 criterion = "0.4"

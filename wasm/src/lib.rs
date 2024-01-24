@@ -13,7 +13,7 @@ use pluginop_common::WASMPtr;
 
 use pluginop_common::quic::Registration;
 pub use pluginop_common::Bytes;
-use pluginop_common::PluginVal;
+pub use pluginop_common::PluginVal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 pub use std::time::Duration;
@@ -137,7 +137,7 @@ pub struct PluginEnv(WASMPtr);
 impl PluginEnv {
     /// Stores a new plugin output.
     pub fn save_output(&self, v: PluginVal) -> Result<()> {
-        let serialized_value = bincode::serialize(&v).map_err(|_| Error::SerializeError)?;
+        let serialized_value = postcard::to_allocvec(&v).map_err(|_| Error::SerializeError)?;
         match unsafe {
             save_output_from_plugin(
                 serialized_value.as_ptr() as WASMPtr,
@@ -151,7 +151,7 @@ impl PluginEnv {
 
     /// Stores a new plugin output.
     pub fn save_outputs(&self, v: &[PluginVal]) -> Result<()> {
-        let serialized_value = bincode::serialize(&v).map_err(|_| Error::SerializeError)?;
+        let serialized_value = postcard::to_allocvec(&v).map_err(|_| Error::SerializeError)?;
         match unsafe {
             save_outputs_from_plugin(
                 serialized_value.as_ptr() as WASMPtr,
@@ -199,7 +199,7 @@ impl PluginEnv {
     where
         T: TryFrom<PluginVal>,
     {
-        let serialized_field = bincode::serialize(&field).map_err(|_| Error::SerializeError)?;
+        let serialized_field = postcard::to_allocvec(&field).map_err(|_| Error::SerializeError)?;
         let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
         let err = unsafe {
             get_connection_from_plugin(
@@ -214,7 +214,7 @@ impl PluginEnv {
         }
         let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
         let plugin_val: PluginVal =
-            bincode::deserialize(slice).map_err(|_| Error::SerializeError)?;
+            postcard::from_bytes(slice).map_err(|_| Error::SerializeError)?;
         plugin_val.try_into().map_err(|_| Error::BadType)
     }
 
@@ -223,8 +223,9 @@ impl PluginEnv {
     where
         T: Into<PluginVal>,
     {
-        let serialized_field = bincode::serialize(&field).map_err(|_| Error::SerializeError)?;
-        let serialized_value = bincode::serialize(&v.into()).map_err(|_| Error::SerializeError)?;
+        let serialized_field = postcard::to_allocvec(&field).map_err(|_| Error::SerializeError)?;
+        let serialized_value =
+            postcard::to_allocvec(&v.into()).map_err(|_| Error::SerializeError)?;
         match unsafe {
             set_connection_from_plugin(
                 serialized_field.as_ptr() as WASMPtr,
@@ -243,7 +244,7 @@ impl PluginEnv {
     where
         T: Deserialize<'de>,
     {
-        let serialized_field = bincode::serialize(&field).expect("serialized field");
+        let serialized_field = postcard::to_allocvec(&field).expect("serialized field");
         let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
         unsafe {
             get_recovery_from_plugin(
@@ -254,7 +255,7 @@ impl PluginEnv {
             );
         }
         let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-        bincode::deserialize(slice).expect("no error")
+        postcard::from_bytes(slice).expect("no error")
     }
 
     /// Sets a recovery field.
@@ -262,8 +263,9 @@ impl PluginEnv {
     where
         T: Into<PluginVal>,
     {
-        let serialized_field = bincode::serialize(&field).map_err(|_| Error::SerializeError)?;
-        let serialized_value = bincode::serialize(&v.into()).map_err(|_| Error::SerializeError)?;
+        let serialized_field = postcard::to_allocvec(&field).map_err(|_| Error::SerializeError)?;
+        let serialized_value =
+            postcard::to_allocvec(&v.into()).map_err(|_| Error::SerializeError)?;
         match unsafe {
             set_recovery_from_plugin(
                 serialized_field.as_ptr() as WASMPtr,
@@ -275,7 +277,6 @@ impl PluginEnv {
             0 => Ok(()),
             _ => Err(Error::APICallError),
         }
-        
     }
 
     /// Get a received packet field.
@@ -283,7 +284,7 @@ impl PluginEnv {
     where
         T: Deserialize<'de>,
     {
-        let serialized_field = bincode::serialize(&field).expect("serialized field");
+        let serialized_field = postcard::to_allocvec(&field).expect("serialized field");
         let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
         unsafe {
             // FIXME we should handle error.
@@ -295,7 +296,7 @@ impl PluginEnv {
             );
         }
         let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-        bincode::deserialize(slice).expect("no error")
+        postcard::from_bytes(slice).expect("no error")
     }
 
     /// Gets an input. May panic.
@@ -311,7 +312,7 @@ impl PluginEnv {
             return Err(Error::ShortInternalBuffer);
         }
         let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-        let input: PluginVal = match bincode::deserialize(slice) {
+        let input: PluginVal = match postcard::from_bytes(slice) {
             Ok(i) => i,
             Err(_) => return Err(Error::SerializeError),
         };
@@ -325,7 +326,7 @@ impl PluginEnv {
             return Err(Error::ShortInternalBuffer);
         }
         let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-        bincode::deserialize(slice).map_err(|_| Error::SerializeError)
+        postcard::from_bytes(slice).map_err(|_| Error::SerializeError)
     }
 
     /// Reads some bytes and advances the related buffer (i.e., multiple calls gives different results).
@@ -351,7 +352,7 @@ impl PluginEnv {
     }
 
     pub fn register(&mut self, r: Registration) -> Result<()> {
-        let serialized = bincode::serialize(&r).map_err(|_| Error::SerializeError)?;
+        let serialized = postcard::to_allocvec(&r).map_err(|_| Error::SerializeError)?;
         match unsafe {
             register_from_plugin(serialized.as_ptr() as WASMPtr, serialized.len() as WASMLen)
         } {
@@ -365,7 +366,7 @@ impl PluginEnv {
     ///
     /// Returns the identifier to the timer event, as provided as argument.
     pub fn set_timer(&mut self, ts: UnixInstant, id: u64, timer_id: u64) -> Result<()> {
-        let serialized_ts = bincode::serialize(&ts).map_err(|_| Error::SerializeError)?;
+        let serialized_ts = postcard::to_allocvec(&ts).map_err(|_| Error::SerializeError)?;
         match unsafe {
             set_timer_from_plugin(
                 serialized_ts.as_ptr() as WASMPtr,
@@ -397,7 +398,7 @@ impl PluginEnv {
             return Err(Error::APICallError);
         }
         let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), size) };
-        bincode::deserialize(slice).map_err(|_| Error::SerializeError)
+        postcard::from_bytes(slice).map_err(|_| Error::SerializeError)
     }
 
     /// Fully enable the plugin operations.
@@ -444,8 +445,7 @@ mod todo {
 
     use crate::{
         buffer_get_bytes_from_plugin, buffer_put_bytes_from_plugin, call_proto_op_from_plugin,
-        generate_connection_id_from_plugin, get_sent_packet_from_plugin,
-        PluginEnv, SIZE,
+        generate_connection_id_from_plugin, get_sent_packet_from_plugin, PluginEnv, SIZE,
     };
 
     impl PluginEnv {
@@ -454,7 +454,7 @@ mod todo {
         where
             T: Deserialize<'de>,
         {
-            let serialized_field = bincode::serialize(&field).expect("serialized field");
+            let serialized_field = postcard::to_allocvec(&field).expect("serialized field");
             let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
             unsafe {
                 // FIXME we should handle error.
@@ -466,7 +466,7 @@ mod todo {
                 );
             }
             let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-            bincode::deserialize(slice).expect("no error")
+            postcard::from_bytes(slice).expect("no error")
         }
 
         /// Reads bytes from a buffer. The read bytes are consumed.
@@ -561,9 +561,9 @@ mod todo {
             args: Vec<PluginVal>,
             inputs: Vec<PluginVal>,
         ) -> Vec<PluginVal> {
-            let serialized_po = bincode::serialize(&po).expect("serialized po");
-            let serialized_args = bincode::serialize(&args).expect("serialized args");
-            let serialized_inputs = bincode::serialize(&inputs).expect("serialized inputs");
+            let serialized_po = postcard::to_allocvec(&po).expect("serialized po");
+            let serialized_args = postcard::to_allocvec(&args).expect("serialized args");
+            let serialized_inputs = postcard::to_allocvec(&inputs).expect("serialized inputs");
             let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
             unsafe {
                 call_proto_op_from_plugin(
@@ -578,7 +578,7 @@ mod todo {
                 );
             }
             let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-            bincode::deserialize(slice).expect("no error")
+            postcard::from_bytes(slice).expect("no error")
         }
 
         /// Generates a connection ID for the connection and record it for the endpoint. Returns `None` if
@@ -592,7 +592,7 @@ mod todo {
                 return None;
             }
             let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-            let cid: ConnectionId = bincode::deserialize(slice).expect("no error");
+            let cid: ConnectionId = postcard::from_bytes(slice).expect("no error");
             Some(cid)
         }
     }

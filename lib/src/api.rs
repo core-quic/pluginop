@@ -25,18 +25,30 @@ pub trait ConnectionToPlugin:
 {
     /// Gets the related `ConnectionField` and writes it as a serialized value in `w`.
     /// It is up to the plugin to correctly handle the value and perform the serialization.
-    fn get_connection(&self, field: ConnectionField, w: &mut [u8]) -> bincode::Result<()>;
+    fn get_connection<'a>(
+        &self,
+        field: ConnectionField,
+        w: &'a mut [u8],
+    ) -> postcard::Result<&'a mut [u8]>;
     /// Sets the related `ConnectionField` to the provided value, that was serialized with content
     /// `value`. It is this function responsibility to correctly convert the
     /// input to the right type.
     fn set_connection(&mut self, field: ConnectionField, value: &[u8]) -> Result<(), CTPError>;
     /// Gets the related `RecoveryField` and writes it as a serialized value in `w`. It is up to the
     /// plugin to correctly handle the value and perform the serialization.
-    fn get_recovery(&self, field: RecoveryField, w: &mut [u8]) -> bincode::Result<()>;
+    fn get_recovery<'a>(
+        &self,
+        field: RecoveryField,
+        w: &'a mut [u8],
+    ) -> postcard::Result<&'a mut [u8]>;
     /// Sets the related `RecoveryField` to the provided value, that was serialized with content
     /// `value`. It is this function responsibility to correctly convert the
     /// input to the right type.
-    fn set_recovery(&mut self, field: RecoveryField, value: &[u8]) -> std::result::Result<(), CTPError>;
+    fn set_recovery(
+        &mut self,
+        field: RecoveryField,
+        value: &[u8],
+    ) -> std::result::Result<(), CTPError>;
 }
 
 /// A trait that must be implemented on structures that have pluginization features. This notably
@@ -77,7 +89,7 @@ fn save_output_from_plugin<CTP: ConnectionToPlugin>(
         Ok(os) => os,
         Err(_) => return -4,
     };
-    match bincode::deserialize_from(&*output_serialized) {
+    match postcard::from_bytes(&output_serialized) {
         Ok(pv) => {
             env.data_mut().outputs.push(pv);
             0
@@ -113,7 +125,7 @@ fn save_outputs_from_plugin<CTP: ConnectionToPlugin>(
         Ok(os) => os,
         Err(_) => return -4,
     };
-    match bincode::deserialize_from(&*output_serialized) {
+    match postcard::from_bytes(&output_serialized) {
         Ok(pvs) => {
             *env.data_mut().outputs = pvs;
             0
@@ -192,16 +204,19 @@ fn get_input_from_plugin<CTP: ConnectionToPlugin>(
         None => return -3,
     };
     // Sanity check to avoid memory overwrite.
-    match bincode::serialized_size(input) {
-        Ok(l) if l > mem_len.into() => return -4,
-        Err(_) => return -5,
-        _ => {}
-    };
+    // match bincode::serialized_size(input) {
+    //     Ok(l) if l > mem_len.into() => return -4,
+    //     Err(_) => return -5,
+    //     _ => {}
+    // };
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked_mut() };
-    match bincode::serialize_into(&mut memory_slice[mem_ptr.offset() as usize..], input) {
-        Ok(()) => 0,
+    match postcard::to_slice(
+        input,
+        &mut memory_slice[mem_ptr.offset() as usize..(mem_ptr.offset() + mem_len) as usize],
+    ) {
+        Ok(_) => 0,
         Err(_) => -6,
     }
 }
@@ -228,19 +243,19 @@ fn get_inputs_from_plugin<CTP: ConnectionToPlugin>(
     };
     let view = memory.view(&env);
     // Sanity check to avoid memory overwrite.
-    match bincode::serialized_size(&*env.data().inputs) {
-        Ok(l) if l > mem_len.into() => return -3,
-        Err(_) => return -4,
-        _ => {}
-    };
+    // match bincode::serialized_size(&*env.data().inputs) {
+    //     Ok(l) if l > mem_len.into() => return -3,
+    //     Err(_) => return -4,
+    //     _ => {}
+    // };
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked_mut() };
-    match bincode::serialize_into(
-        &mut memory_slice[mem_ptr.offset() as usize..],
+    match postcard::to_slice(
         &*env.data().inputs,
+        &mut memory_slice[mem_ptr.offset() as usize..(mem_ptr.offset() + mem_len) as usize],
     ) {
-        Ok(()) => 0,
+        Ok(_) => 0,
         Err(_) => -5,
     }
 }
@@ -302,7 +317,7 @@ fn get_connection_from_plugin<CTP: ConnectionToPlugin>(
     // as the guest will preallocate the memory.
     let memory_slice =
         unsafe { std::slice::from_raw_parts_mut(memory_slice.as_mut_ptr(), memory_slice.len()) };
-    let field = match bincode::deserialize_from(
+    let field = match postcard::from_bytes(
         &memory_slice[field_ptr.offset() as usize..(field_ptr.offset() + field_len) as usize],
     ) {
         Ok(f) => f,
@@ -354,7 +369,7 @@ fn set_connection_from_plugin<CTP: ConnectionToPlugin>(
     // as the guest will preallocate the memory.
     let memory_slice =
         unsafe { std::slice::from_raw_parts(memory_slice.as_ptr(), memory_slice.len()) };
-    let field = match bincode::deserialize_from(
+    let field = match postcard::from_bytes(
         &memory_slice[field_ptr.offset() as usize..(field_ptr.offset() + field_len) as usize],
     ) {
         Ok(f) => f,
@@ -460,7 +475,7 @@ fn register_from_plugin<CTP: ConnectionToPlugin>(
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked() };
-    let r = match bincode::deserialize_from(
+    let r = match postcard::from_bytes(
         &memory_slice[ptr.offset() as usize..(ptr.offset() + len) as usize],
     ) {
         Ok(f) => f,
@@ -496,7 +511,7 @@ fn set_timer_from_plugin<CTP: ConnectionToPlugin>(
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked() };
-    let unix_instant = match bincode::deserialize_from(
+    let unix_instant = match postcard::from_bytes(
         &memory_slice[ts_ptr.offset() as usize..(ts_ptr.offset() + ts_len) as usize],
     ) {
         Ok(i) => i,
@@ -543,16 +558,19 @@ fn get_unix_instant_from_plugin<CTP: ConnectionToPlugin>(
     let view = memory.view(&env);
     let now = unix_time::Instant::now();
     // Sanity check to avoid memory overwrite.
-    match bincode::serialized_size(&now) {
-        Ok(l) if l > res_len.into() => return -4,
-        Err(_) => return -5,
-        _ => {}
-    };
+    // match bincode::serialized_size(&now) {
+    //     Ok(l) if l > res_len.into() => return -4,
+    //     Err(_) => return -5,
+    //     _ => {}
+    // };
     // SAFETY: Given that plugins are single-threaded per-connection, this does
     // not introduce any UB.
     let memory_slice = unsafe { view.data_unchecked_mut() };
-    match bincode::serialize_into(&mut memory_slice[res_ptr.offset() as usize..], &now) {
-        Ok(()) => 0,
+    match postcard::to_slice(
+        &now,
+        &mut memory_slice[res_ptr.offset() as usize..(res_ptr.offset() + res_len) as usize],
+    ) {
+        Ok(_) => 0,
         Err(_) => -6,
     }
 }
@@ -649,7 +667,7 @@ fn get_recovery_from_plugin<CTP: ConnectionToPlugin>(
     // as the guest will preallocate the memory.
     let memory_slice =
         unsafe { std::slice::from_raw_parts_mut(memory_slice.as_mut_ptr(), memory_slice.len()) };
-    let field = match bincode::deserialize_from(
+    let field = match postcard::from_bytes(
         &memory_slice[field_ptr.offset() as usize..(field_ptr.offset() + field_len) as usize],
     ) {
         Ok(f) => f,
@@ -701,7 +719,7 @@ fn set_recovery_from_plugin<CTP: ConnectionToPlugin>(
     // as the guest will preallocate the memory.
     let memory_slice =
         unsafe { std::slice::from_raw_parts(memory_slice.as_ptr(), memory_slice.len()) };
-    let field = match bincode::deserialize_from(
+    let field = match postcard::from_bytes(
         &memory_slice[field_ptr.offset() as usize..(field_ptr.offset() + field_len) as usize],
     ) {
         Ok(f) => f,
