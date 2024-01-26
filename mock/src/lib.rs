@@ -444,10 +444,49 @@ mod tests {
         }
     }
 
-    fn memory_run(path: &str) {
+    #[test]
+    fn static_memory() {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-        let path = path.to_string();
+        let path = "../tests/static-memory/static_memory.wasm".to_string();
+        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
+        assert!(ok.is_ok());
+        let (po, a) = PluginOp::from_name("get_mult_value");
+        assert!(pcd.get_ph().provides(&po, a));
+        let ph = pcd.get_ph_mut();
+        let res = ph.call(&po, &[]);
+        assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), []);
+        let (po2, a2) = PluginOp::from_name("set_values");
+        assert!(pcd.get_ph().provides(&po2, a2));
+        let ph = pcd.get_ph_mut();
+        let res = ph.call(&po2, &[]);
+        assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), []);
+        let res = ph.call(&po, &[]);
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            Error::OperationError(64) => {},
+            _ => assert!(false),
+        };
+        let ph = pcd.get_ph_mut();
+        let res = ph.call(&po2, &[]);
+        assert!(res.is_ok());
+        assert_eq!(*res.unwrap(), []);
+        let ph = pcd.get_ph_mut();
+        let res = ph.call(&po, &[]);
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            Error::OperationError(64) => {},
+            _ => assert!(false),
+        };
+    }
+
+    #[test]
+    fn inputs_support() {
+        let mut pcd =
+            PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
+        let path = "../tests/inputs-support/inputs_support.wasm".to_string();
         let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
         assert!(ok.is_ok());
         let (po, a) = PluginOp::from_name("get_mult_value");
@@ -473,16 +512,6 @@ mod tests {
         let res = ph.call(&po, &[]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), [PluginVal::I64(0)]);
-    }
-
-    #[test]
-    fn static_memory() {
-        memory_run("../tests/static-memory/static_memory.wasm");
-    }
-
-    #[test]
-    fn inputs_support() {
-        memory_run("../tests/inputs-support/inputs_support.wasm");
     }
 
     #[test]

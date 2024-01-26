@@ -1,5 +1,4 @@
-use std::sync::Mutex;
-use pluginop_wasm::PluginEnv;
+use pluginop_wasm::{PluginCell, PluginEnv};
 use lazy_static::lazy_static;
 
 struct Data {
@@ -8,7 +7,7 @@ struct Data {
 }
 
 lazy_static! {
-    static ref DATA: Mutex<Data> = Mutex::new(Data {
+    static ref DATA: PluginCell<Data> = PluginCell::new(Data {
         val1: 0,
         val2: 0,
     });
@@ -16,22 +15,17 @@ lazy_static! {
 
 // Export a function named "simple_call".
 #[no_mangle]
-pub extern fn set_values(penv: &mut PluginEnv) -> i64 {
-    let (val1, val2) = if let (Ok(v1), Ok(v2)) = (penv.get_input(0), penv.get_input(1)) {
-        (v1, v2)
-    } else {
-        return -1;
-    };
-    let mut data = (*DATA).lock().unwrap();
-    (*data).val1 = val1;
-    (*data).val2 = val2;
+pub extern fn set_values(_penv: &mut PluginEnv) -> i64 {
+    DATA.get_mut().val1 = 12;
+    DATA.get_mut().val2 = 3;
     0
 }
 
 #[no_mangle]
-pub extern fn get_mult_value(penv: &mut PluginEnv) -> i64 {
-    let data = (*DATA).lock().unwrap();
-    let res = ((*data).val1 * (*data).val2) as i64;
-    penv.save_output(res.into());
-    0
+pub extern fn get_mult_value(_penv: &mut PluginEnv) -> i64 {
+    let add = DATA.val1 + DATA.val2;
+    let sub = DATA.val1 - DATA.val2;
+    let mul = DATA.val1 * DATA.val2;
+    let div = if DATA.val2 != 0 { DATA.val1 / DATA.val2 } else { 0 };
+    (add + sub + mul + div).into()
 }

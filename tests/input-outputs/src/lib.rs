@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use pluginop_wasm::PluginEnv;
+use pluginop_wasm::{PluginCell, PluginEnv};
 use lazy_static::lazy_static;
 
 struct Data {
@@ -8,7 +8,7 @@ struct Data {
 }
 
 lazy_static! {
-    static ref DATA: Mutex<Data> = Mutex::new(Data {
+    static ref DATA: PluginCell<Data> = PluginCell::new(Data {
         val1: 0,
         val2: 1,
     });
@@ -22,19 +22,17 @@ pub extern fn set_values(penv: &mut PluginEnv) -> i64 {
     } else {
         return -1;
     };
-    let mut data = (*DATA).lock().unwrap();
-    (*data).val1 = val1;
-    (*data).val2 = val2;
+    DATA.get_mut().val1 = val1;
+    DATA.get_mut().val2 = val2;
     0
 }
 
 #[no_mangle]
 pub extern fn get_calc_value(penv: &mut PluginEnv) -> i64 {
-    let data = (*DATA).lock().unwrap();
-    let add = data.val1 + data.val2;
-    let sub = data.val1 - data.val2;
-    let mul = data.val1 * data.val2;
-    let div = data.val1 / data.val2;
+    let add = DATA.val1 + DATA.val2;
+    let sub = DATA.val1 - DATA.val2;
+    let mul = DATA.val1 * DATA.val2;
+    let div = DATA.val1 / DATA.val2;
     match penv.save_outputs(&[add.into(), sub.into(), mul.into(), div.into()]) {
         Ok(()) => 0,
         Err(_) => -1,

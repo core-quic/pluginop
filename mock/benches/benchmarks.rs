@@ -4,7 +4,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use pluginop::{
     common::{
         quic::{Frame, FrameRegistration, MaxDataFrame, QVal},
-        PluginOp, PluginVal,
+        Anchor, PluginOp, PluginVal,
     },
     octets::{Octets, OctetsMut},
     plugin::Env,
@@ -31,14 +31,11 @@ static BASE: &'static str = "..";
 // Root user.
 // static BASE: &'static str = "/Users/qdeconinck/code/pluginop";
 
-fn memory_allocation_bench() {
-    let mut pcd =
-        PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    let path = [BASE, "/tests/memory-allocation/memory_allocation.wasm"]
-        .join("")
-        .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
-    assert!(ok.is_ok());
+fn memory_allocation_bench(pcd: &mut PluginizableConnectionDummy) {
+    let (po, _) = (PluginOp::Init, Anchor::Replace);
+    let ph = pcd.get_ph_mut();
+    let res = ph.call(&po, &[]);
+    assert!(res.is_ok());
     let (po, a) = PluginOp::from_name("check_data");
     assert!(pcd.get_ph().provides(&po, a));
     let ph = pcd.get_ph_mut();
@@ -59,46 +56,22 @@ fn memory_allocation_bench() {
 }
 
 fn static_memory(pcd: &mut PluginizableConnectionDummy) {
+    let (po2, a2) = PluginOp::from_name("set_values");
+    assert!(pcd.get_ph().provides(&po2, a2));
+    let ph = pcd.get_ph_mut();
+    let res = ph.call(&po2, &[]);
+    assert!(res.is_ok());
     let (po, a) = PluginOp::from_name("get_mult_value");
     assert!(pcd.get_ph().provides(&po, a));
     let ph = pcd.get_ph_mut();
     let res = ph.call(&po, &[]);
-    assert!(res.is_ok());
-    assert_eq!(*res.unwrap(), [PluginVal::I64(0)]);
-    let (po2, a2) = PluginOp::from_name("set_values");
-    assert!(pcd.get_ph().provides(&po2, a2));
-    let ph = pcd.get_ph_mut();
-    let res = ph.call(&po2, &[(2 as i32).into(), (3 as i32).into()]);
-    assert!(res.is_ok());
-    let res = ph.call(&po, &[]);
-    assert!(res.is_ok());
-    assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
-    let ph = pcd.get_ph_mut();
-    let res = ph.call(&po2, &[(0 as i32).into(), (0 as i32).into()]);
-    assert!(res.is_ok());
-    let ph = pcd.get_ph_mut();
-    let res = ph.call(&po, &[]);
-    assert!(res.is_ok());
-    assert_eq!(*res.unwrap(), [PluginVal::I64(0)]);
+    assert!(res.is_err());
+    // assert_eq!(res.unwrap_err(), pluginop::Error::OperationError(64));
 }
 
 fn input_outputs(pcd: &mut PluginizableConnectionDummy) {
-    let (po, a) = PluginOp::from_name("get_calc_value");
-    assert!(pcd.get_ph().provides(&po, a));
-    let ph = pcd.get_ph_mut();
-    let res = ph.call(&po, &[]);
-    assert!(res.is_ok());
-    assert_eq!(
-        *res.unwrap(),
-        [
-            PluginVal::I32(1),
-            PluginVal::I32(-1),
-            PluginVal::I32(0),
-            PluginVal::I32(0)
-        ]
-    );
-    let (po2, a2) = PluginOp::from_name("set_values");
-    assert!(pcd.get_ph().provides(&po2, a2));
+    let (po, _) = PluginOp::from_name("get_calc_value");
+    let (po2, _) = PluginOp::from_name("set_values");
     let ph = pcd.get_ph_mut();
     let res = ph.call(&po2, &[(12 as i32).into(), (3 as i32).into()]);
     assert!(res.is_ok());
@@ -112,22 +85,6 @@ fn input_outputs(pcd: &mut PluginizableConnectionDummy) {
             PluginVal::I32(9),
             PluginVal::I32(36),
             PluginVal::I32(4)
-        ]
-    );
-    let ph = pcd.get_ph_mut();
-    let res = ph.call(&po2, &[(0 as i32).into(), (1 as i32).into()]);
-    assert!(res.is_ok());
-    assert_eq!(*res.unwrap(), []);
-    let ph = pcd.get_ph_mut();
-    let res = ph.call(&po, &[]);
-    assert!(res.is_ok());
-    assert_eq!(
-        *res.unwrap(),
-        [
-            PluginVal::I32(1),
-            PluginVal::I32(-1),
-            PluginVal::I32(0),
-            PluginVal::I32(0)
         ]
     );
 }
@@ -175,6 +132,16 @@ fn first_pluginop() {
     assert_eq!(pcd.conn.max_tx_data, 4000);
     pcd.recv_frame(Frame::MaxData(MaxDataFrame { maximum_data: 2000 }));
     assert_eq!(pcd.conn.max_tx_data, 4000);
+}
+
+fn loading_plugin() {
+    let mut pcd =
+        PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
+    let path = [BASE, "/tests/max-data-frame/max_data_frame.wasm"]
+        .join("")
+        .to_string();
+    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
+    assert!(ok.is_ok());
 }
 
 fn macro_simple() {
@@ -238,8 +205,19 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("run and return", |b| b.iter(|| ph.call(&po, &[])));
 
     // Second test
+    let mut pcd =
+        PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
+    let path = [BASE, "/tests/memory-allocation/memory_allocation.wasm"]
+        .join("")
+        .to_string();
+    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
+    assert!(ok.is_ok());
+    let (po2, a2) = PluginOp::from_name("free_data");
+    assert!(pcd.get_ph().provides(&po2, a2));
+    let ph = pcd.get_ph_mut();
+    let _ = ph.call(&po2, &[]);
     c.bench_function("memory allocation", |b| {
-        b.iter(|| memory_allocation_bench())
+        b.iter(|| memory_allocation_bench(&mut pcd))
     });
 
     // Third test
@@ -253,14 +231,14 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("static memory", |b| b.iter(|| static_memory(&mut pcd)));
 
     // Fourth test
-    let mut pcd =
-        PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    let path = [BASE, "/tests/inputs-support/inputs_support.wasm"]
-        .join("")
-        .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
-    assert!(ok.is_ok());
-    c.bench_function("inputs support", |b| b.iter(|| static_memory(&mut pcd)));
+    // let mut pcd =
+    //     PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
+    // let path = [BASE, "/tests/inputs-support/inputs_support.wasm"]
+    //     .join("")
+    //     .to_string();
+    // let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
+    // assert!(ok.is_ok());
+    // c.bench_function("inputs support", |b| b.iter(|| static_memory(&mut pcd)));
 
     // Fifth test
     let mut pcd =
@@ -283,6 +261,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("increase-max-data", |b| {
         b.iter(|| increase_max_data(&mut pcd))
     });
+
+    // Seventh test
+    c.bench_function("loading plugins", |b| b.iter(|| loading_plugin()));
 
     // Seventh test
     c.bench_function("first pluginop", |b| b.iter(|| first_pluginop()));
