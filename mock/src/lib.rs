@@ -727,6 +727,10 @@ mod tests {
         let res = ph.poctl(2, &[one, two]);
         assert!(res.is_ok());
         assert_eq!(*res.unwrap(), [PluginVal::I64(-1)]);
+        // Testing poctl within plugin. Not really a nice case because it should not happen in practice.
+        // Probably that inner poctl should be denied.
+        let res = ph.poctl(3, &[]);
+        assert!(res.is_ok());
     }
 
     #[test]

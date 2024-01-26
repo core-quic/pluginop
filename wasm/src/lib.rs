@@ -90,6 +90,14 @@ extern "C" {
         value_ptr: WASMPtr,
         value_len: WASMLen,
     ) -> APIResult;
+    /* Calls a plugin control */
+    fn poctl_from_plugin(
+        id: u64,
+        input_ptr: WASMPtr,
+        input_len: WASMLen,
+        res_ptr: WASMPtr,
+        res_len: WASMLen,
+    ) -> APIResult;
     // ----- TODOs -----
     /* Functions for the buffer to read */
     fn buffer_get_bytes_from_plugin(ptr: WASMPtr, len: WASMLen) -> APIResult;
@@ -406,6 +414,27 @@ impl PluginEnv {
     /// `always_enabled()`.
     pub fn enable(&self) {
         unsafe { enable_from_plugin() };
+    }
+
+    /// Invokes a plugin operation control operation.
+    pub fn poctl(&mut self, id: u64, params: &[PluginVal]) -> Result<Vec<PluginVal>> {
+        let serialized_inputs =
+            postcard::to_allocvec(&params).map_err(|_| Error::SerializeError)?;
+        let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
+        let err = unsafe {
+            poctl_from_plugin(
+                id,
+                serialized_inputs.as_ptr() as WASMPtr,
+                serialized_inputs.len() as WASMLen,
+                res.as_mut_ptr() as WASMPtr,
+                SIZE as WASMLen,
+            )
+        };
+        if err != 0 {
+            return Err(Error::APICallError);
+        }
+        let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
+        postcard::from_bytes(slice).map_err(|_| Error::SerializeError)
     }
 }
 
