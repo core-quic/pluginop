@@ -743,6 +743,59 @@ fn set_recovery_from_plugin<CTP: ConnectionToPlugin>(
     }
 }
 
+/// Calls a plugin control operation.
+///
+/// Function intended to be part of the Plugin API.
+fn poctl_from_plugin<CTP: ConnectionToPlugin>(
+    mut env: FunctionEnvMut<Env<CTP>>,
+    id: u64,
+    inputs_ptr: WasmPtr<u8>,
+    inputs_len: WASMLen,
+    res_ptr: WasmPtr<u8>,
+    res_len: WASMLen,
+) -> i64 {
+    let instance = if let Some(i) = env.data().get_instance() {
+        i
+    } else {
+        return -1;
+    };
+    let instance = instance.as_ref();
+    let memory = match instance.exports.get_memory("memory") {
+        Ok(m) => m,
+        Err(_) => return -2,
+    };
+    let view = memory.view(&env);
+    // SAFETY: Given that plugins are single-threaded per-connection, this does
+    // not introduce any UB.
+    let memory_slice = unsafe { view.data_unchecked_mut() };
+    // SAFETY:  Also, this won't increase the memory of the plugin,
+    // as the guest will preallocate the memory.
+    let memory_slice =
+        unsafe { std::slice::from_raw_parts_mut(memory_slice.as_mut_ptr(), memory_slice.len()) };
+    let inputs: Vec<crate::PluginVal> = match postcard::from_bytes(
+        &memory_slice[inputs_ptr.offset() as usize..(inputs_ptr.offset() + inputs_len) as usize],
+    ) {
+        Ok(i) => i,
+        Err(_) => return -3,
+    };
+    let ph = if let Some(ph) = env.data_mut().get_ph() {
+        ph
+    } else {
+        return -4;
+    };
+    let outputs = match ph.poctl(id, &inputs) {
+        Ok(pvs) => pvs,
+        Err(_) => return -5,
+    };
+    match postcard::to_slice(
+        &outputs,
+        &mut memory_slice[res_ptr.offset() as usize..(res_ptr.offset() + res_len) as usize],
+    ) {
+        Ok(_) => 0,
+        Err(_) => -6,
+    }
+}
+
 macro_rules! exports_insert {
     ($e:ident, $s:ident, $env:ident, $f:ident) => {
         $e.insert(stringify!($f), Function::new_typed_with_env($s, $env, $f));
@@ -777,6 +830,7 @@ pub fn get_imports_with<CTP: ConnectionToPlugin>(
     exports_insert!(exports, store, env, enable_from_plugin);
     exports_insert!(exports, store, env, get_recovery_from_plugin);
     exports_insert!(exports, store, env, set_recovery_from_plugin);
+    exports_insert!(exports, store, env, poctl_from_plugin);
 
     let mut imports = Imports::new();
     imports.register_namespace("env", exports);
