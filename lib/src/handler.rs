@@ -58,6 +58,7 @@ impl<CTP: ConnectionToPlugin> PluginArray<CTP> {
     }
 }
 
+/// The core structure handling the pluginization of connections.
 pub struct PluginHandler<CTP: ConnectionToPlugin> {
     /// The engine used to instantiate plugins.
     engine: Engine,
@@ -154,15 +155,6 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         plugin_fname: &PathBuf,
         force_enable: bool,
     ) -> Result<(), Error> {
-        // Due to the need of two-step plugin loading, we need to relax this check.
-        // API calls will fail, but never by crashing.
-        // if self.conn.is_null() {
-        //     error!("Trying to insert a plugin without set the pluginizable connection pointer");
-        //     return Err(Error::InternalError(
-        //         "Trying to insert a plugin without set the pluginizable connection pointer"
-        //             .to_string(),
-        //     ));
-        // }
         let mut plugin = Plugin::new(plugin_fname, self)?;
         // Cache whether anchors are provided.
         self.has_anchor

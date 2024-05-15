@@ -466,7 +466,7 @@ mod tests {
         let res = ph.call(&po, &[]);
         assert!(res.is_err());
         match res.unwrap_err() {
-            Error::OperationError(64) => {},
+            Error::OperationError(64) => {}
             _ => assert!(false),
         };
         let ph = pcd.get_ph_mut();
@@ -477,7 +477,7 @@ mod tests {
         let res = ph.call(&po, &[]);
         assert!(res.is_err());
         match res.unwrap_err() {
-            Error::OperationError(64) => {},
+            Error::OperationError(64) => {}
             _ => assert!(false),
         };
     }

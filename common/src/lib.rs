@@ -12,6 +12,7 @@ pub type WASMPtr = u32;
 pub type WASMLen = u32;
 pub type APIResult = i64;
 
+/// The different conversion errors that may arise with plugin-processable structures.
 #[derive(Clone, Debug)]
 pub enum ConversionError {
     InvalidBool,
@@ -33,30 +34,53 @@ pub enum ConversionError {
     InvalidQVal,
 }
 
-// FIXME: move these protoops in their respective protocols.
+/// The actual plugin operations.
+///
+/// FIXME: move these protoops in their respective protocols.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, PartialOrd)]
 pub enum PluginOp {
-    // Operation that will always be called once the plugin got loaded.
+    /// Operation that will always be called once the plugin got loaded.
     Init,
+
+    /// Operation with no particular meaning, only for testing purposes.
+    Test,
+
+    /// Plugin control operation, unspecified protocol operations called by the application.
+    PluginControl(u64),
+
+    /// Specific protocol operation when a plugin triggers some timers.
+    OnPluginTimeout(u64),
+
+    /// Decode from the wire the QUIC transport parameter having the specified type.
+    DecodeTransportParameter(u64),
+    /// Write to the wire the QUIC transport parameter having the specified type.
+    WriteTransportParameter(u64),
+
+    /// Provide some textual logging of the frame with specified type.
+    LogFrame(u64),
+    /// Report whether the frame was successfully acknowledged or lost.
+    NotifyFrame(u64),
+    /// Callback event when the frame has been confirmed scheduling for the current packet.
+    OnFrameReserved(u64),
+    /// Converts a wire-format frame into a plugin-processable structure.
+    ParseFrame(u64),
+    /// Generate a plugin-processable structure representing the next frame to send.
+    PrepareFrame(u64),
+    /// Process, at receiver side, the plugin-processable structure.
+    ProcessFrame(u64),
+    /// Return whether a frame of the corresponding type should be scheduled for sending in
+    /// the next packet.
+    ShouldSendFrame(u64),
+    /// Return the length of the complete frame on the wire.
+    WireLen(u64),
+    /// From a plugin-processable structure, write the frame on the wire.
+    WriteFrame(u64),
 
     // These derive from quic-invariants, from version.
     // Note that parsing them is an invariant, so we just have process here.
     ProcessLongHeader(u32),
     ProcessShortHeader(u32),
     ProcessVersionNegotiation,
-
-    DecodeTransportParameter(u64),
-    WriteTransportParameter(u64),
-
-    LogFrame(u64),
-    NotifyFrame(u64),
-    OnFrameReserved(u64),
-    ParseFrame(u64),
-    PrepareFrame(u64),
-    ProcessFrame(u64),
-    ShouldSendFrame(u64),
-    WireLen(u64),
-    WriteFrame(u64),
 
     GetPacketToSend,
 
@@ -70,24 +94,18 @@ pub enum PluginOp {
     SetLossDetectionTimer,
     UpdateRtt,
 
-    /// Plugin control operation, unspecified protocol operations called by the application.
-    PluginControl(u64),
-
-    /// Specific protocol operation when a plugin triggers some timers.
-    OnPluginTimeout(u64),
-
-    Test,
-
-    // TODO: think about the sending of packets, I think this should be version specific (only one protoop?).
-
-    // In case we have custom protocol operations.
+    /// For experimentation purposes.
     Other([u8; 32]),
 }
 
+/// The different anchors where plugin bytecodes can be attached.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Anchor {
+    /// Execute just before calling the operation. Cannot modify the running context.
     Pre,
+    /// Execute in place of the operation. Can modify the running context.
     Replace,
+    /// Execute just after returning from the operation. Cannot modify the running context.
     Post,
 }
 
@@ -108,7 +126,9 @@ fn extract_po_param(name: &str) -> Result<u64, ParseIntError> {
 }
 
 impl PluginOp {
-    // FIXME find a more idiomatic way
+    /// Convert a string into the corresponding protocol operation and anchor.
+    ///
+    /// FIXME find a more idiomatic way
     pub fn from_name(name: &str) -> (PluginOp, Anchor) {
         let (name, anchor) = if let Some(po_name) = name.strip_prefix("pre_") {
             (po_name, Anchor::Pre)
@@ -234,10 +254,8 @@ impl PluginOp {
     }
 }
 
-/// This type can possibly change over time. Offering directly raw bytes to plugins limits
-/// monitoring capabilities. Maybe a Bytes API?
-///
-/// Note that this content depends on the attached plugin handler.
+/// A type, implemented as an access token, providing a capability-based access to raw
+/// bytes between the host implementation and the plugin bytecode.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Bytes {
     /// The tag to use to retrieve the associated data.
@@ -267,9 +285,9 @@ pub enum PluginVal {
     F32(f32),
     /// A f64.
     F64(f64),
-    // A Usize, but encoded as a u64.
+    /// A Usize, but encoded as a u64.
     Usize(u64),
-    // Some bytes.
+    /// An access token to some raw bytes.
     Bytes(Bytes),
     /// A duration.
     Duration(Duration),
