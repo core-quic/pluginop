@@ -296,21 +296,6 @@ fn get_out_param_block(
 ) -> proc_macro2::TokenStream {
     let fn_output = &base_fn.sig.output;
     let fn_inputs = &base_fn.sig.inputs;
-    // let fn_inputs_no_param: Vec<FnArg> = fn_inputs
-    //     .clone()
-    //     .into_iter()
-    //     .filter(|e| {
-    //         if let FnArg::Typed(pt) = e {
-    //             if let Pat::Ident(pi) = &*pt.pat {
-    //                 pi.ident != param
-    //             } else {
-    //                 true
-    //             }
-    //         } else {
-    //             true
-    //         }
-    //     })
-    //     .collect();
     let fn_inputs_iter: Vec<FnArg> = fn_inputs.clone().into_iter().collect();
     let fn_inputs_no_self = fn_inputs_iter.clone();
     let fn_args = extract_arg_idents_vec(fn_inputs_no_self);

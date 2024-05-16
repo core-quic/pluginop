@@ -273,10 +273,6 @@ pub enum Error {
     NoPluginFunction,
 }
 
-pub enum ProtoOpFunc<CTP: ConnectionToPlugin> {
-    ProcessFrame(fn(&mut CTP, quic::Frame, &quic::Header, quic::RcvInfo, epoch: u64, now: Instant)),
-}
-
 /// A trait allowing converting an host-implementation type to a `T` one, possibly
 /// with the help of the `PluginHandler` if some information should not be directly
 /// accessible to the plugins.

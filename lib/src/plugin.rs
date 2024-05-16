@@ -30,17 +30,17 @@ pub type PluginFunction = TypedFunction<PluginInputType, PluginOutputType>;
 
 #[derive(Default)]
 struct POCode {
-    pre: Option<PluginFunction>,
-    replace: Option<PluginFunction>,
-    post: Option<PluginFunction>,
+    before: Option<PluginFunction>,
+    define: Option<PluginFunction>,
+    after: Option<PluginFunction>,
 }
 
 impl Debug for POCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("POCode")
-            .field("pre", &self.pre.is_some())
-            .field("replace", &self.replace.is_some())
-            .field("post", &self.post.is_some())
+            .field("before", &self.before.is_some())
+            .field("define", &self.define.is_some())
+            .field("after", &self.after.is_some())
             .finish()
     }
 }
@@ -49,9 +49,9 @@ impl POCode {
     /// Get the underlying PluginFunction associated to the provided `Anchor`.
     pub(crate) fn get(&self, a: Anchor) -> Option<&PluginFunction> {
         match a {
-            Anchor::Before => self.pre.as_ref(),
-            Anchor::Define => self.replace.as_ref(),
-            Anchor::After => self.post.as_ref(),
+            Anchor::Before => self.before.as_ref(),
+            Anchor::Define => self.define.as_ref(),
+            Anchor::After => self.after.as_ref(),
         }
     }
 }
@@ -147,11 +147,11 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
         self.outputs.clear();
     }
 
-    pub fn get_instance(&self) -> Option<Arc<Pin<Box<Instance>>>> {
+    pub(crate) fn get_instance(&self) -> Option<Arc<Pin<Box<Instance>>>> {
         self.instance.upgrade()
     }
 
-    pub fn get_ph(&mut self) -> Option<&mut PluginHandler<CTP>> {
+    pub(crate) fn get_ph(&mut self) -> Option<&mut PluginHandler<CTP>> {
         if self.ph.is_null() {
             None
         } else {
@@ -161,7 +161,12 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
         }
     }
 
-    pub fn get_bytes(&mut self, tag: usize, len: usize, mem: &mut [u8]) -> Result<usize, CTPError> {
+    pub(crate) fn get_bytes(
+        &mut self,
+        tag: usize,
+        len: usize,
+        mem: &mut [u8],
+    ) -> Result<usize, CTPError> {
         let ph = self.get_ph().ok_or(CTPError::BadBytes)?;
         let bc = ph.get_mut_bytes_content(tag)?;
         if len > bc.read_len() {
@@ -175,7 +180,7 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
         bc.write_into(len, mem)
     }
 
-    pub fn put_bytes(&mut self, tag: usize, mem: &[u8]) -> Result<usize, CTPError> {
+    pub(crate) fn put_bytes(&mut self, tag: usize, mem: &[u8]) -> Result<usize, CTPError> {
         let ph = self.get_ph().ok_or(CTPError::BadBytes)?;
         let bc = ph.get_mut_bytes_content(tag)?;
         // TODO: limit the length that plugins should be able to write.
@@ -225,7 +230,7 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
         cancelled
     }
 
-    pub fn create_file_with_path(&mut self, path: &Path) -> Result<i64, CTPError> {
+    pub(crate) fn create_file_with_path(&mut self, path: &Path) -> Result<i64, CTPError> {
         // TODO: we need to check whether we have the permisison to create the file.
         // TODO: secured path location (avoid /etc/passwd vulnerabilities)
         match File::create(path) {
@@ -242,7 +247,8 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
         }
     }
 
-    pub fn write_to_file(&self, fd: i64, buf: &[u8]) -> Result<usize, CTPError> {
+    /// Write the content of the buffer in the provided file descriptor.
+    pub(crate) fn write_to_file(&self, fd: i64, buf: &[u8]) -> Result<usize, CTPError> {
         if fd < 0 {
             return Err(CTPError::FileError);
         }
@@ -263,7 +269,7 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
     }
 
     /// Fully enable the plugin operations.
-    pub fn enable(&mut self) {
+    pub(crate) fn enable(&mut self) {
         self.enabled = true;
     }
 }
@@ -450,16 +456,16 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
                 has_anchor[a.index()] = true;
                 match pocodes.get_mut(&po) {
                     Some(poc) => match a {
-                        Anchor::Before => poc.pre = Some(func),
-                        Anchor::Define => poc.replace = Some(func),
-                        Anchor::After => poc.post = Some(func),
+                        Anchor::Before => poc.before = Some(func),
+                        Anchor::Define => poc.define = Some(func),
+                        Anchor::After => poc.after = Some(func),
                     },
                     None => {
                         let mut poc = POCode::default();
                         match a {
-                            Anchor::Before => poc.pre = Some(func),
-                            Anchor::Define => poc.replace = Some(func),
-                            Anchor::After => poc.post = Some(func),
+                            Anchor::Before => poc.before = Some(func),
+                            Anchor::Define => poc.define = Some(func),
+                            Anchor::After => poc.after = Some(func),
                         }
                         pocodes.insert(po, poc);
                     }
@@ -547,9 +553,9 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
 
         let func = match self.pocodes.get(po) {
             Some(poc) => match anchor {
-                Anchor::Before => poc.pre.as_ref(),
-                Anchor::Define => poc.replace.as_ref(),
-                Anchor::After => poc.post.as_ref(),
+                Anchor::Before => poc.before.as_ref(),
+                Anchor::Define => poc.define.as_ref(),
+                Anchor::After => poc.after.as_ref(),
             },
             None => None,
         };

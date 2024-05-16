@@ -94,17 +94,6 @@ impl<CTP: ConnectionToPlugin> std::fmt::Debug for PluginHandler<CTP> {
     }
 }
 
-/// A default implementation of a protocol operation proposed by the host implementation.
-pub struct ProtocolOperationDefault {
-    // po: ProtoOp,
-    // default_fn: fn(InternalArgs, &[Value]) -> Box<dyn Any>,
-    // return_type: POReturnType,
-    // named_args: Vec<&'static str>,
-    // named_refs: Vec<&'static str>,
-    // named_muts: Vec<&'static str>,
-    // use_transient: UseTransientStructs,
-}
-
 impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
     /// Create a new [`PluginHandler`], enabling the execution of plugins inserted on the fly to
     /// customize the behavior of a connection.
@@ -281,11 +270,10 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
     /// Invokes the protocol operation `po` and runs its anchors.
     fn call_internal(
         &mut self,
-        pod: Option<&&ProtocolOperationDefault>,
         po: &PluginOp,
         params: &[PluginVal],
     ) -> Result<Vec<PluginVal>, Error> {
-        // PRE part
+        // BEFORE part
         for p in self
             .plugins
             .iter_mut()
@@ -294,31 +282,13 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
             p.call(po, Anchor::Before, params)?;
         }
 
-        // REPLACE part
+        // DEFINE part
         let res = match self.plugins.get_first_plugin(po) {
             Some(p) => p.call(po, Anchor::Define, params)?,
-            None => {
-                match pod {
-                    Some(_pod) => {
-                        todo!()
-                        // Gives back both transient arguments and named arguments.
-                        // {
-                        //     let mut transient_args = self.transient_args.lock().unwrap();
-                        //     internal_args.transient = transient_args.take();
-                        //     *transient_args = old_transient_args.take();
-                        // }
-                        // let ret = (pod.default_fn)(internal_args, params);
-                        // match ret.downcast::<R>() {
-                        //     Ok(r) => *r,
-                        //     Err(e) => return Err(Error::OutputConversionError(format!("{:?} to TypeId {:?}", e, std::any::TypeId::of::<R>()))),
-                        // }
-                    }
-                    None => return Err(Error::NoDefault(*po)),
-                }
-            }
+            None => return Err(Error::NoDefault(*po)),
         };
 
-        // POST part
+        // AFTER part
         for p in self
             .plugins
             .iter_mut()
@@ -354,10 +324,7 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
     pub fn call(&mut self, po: &PluginOp, params: &[PluginVal]) -> Result<Vec<PluginVal>, Error> {
         // trace!("Calling protocol operation {:?}", po);
 
-        // TODO
-        // let pod = self.default_protocol_operations.get(po);
-
-        self.call_internal(None /* pod */, po, params)
+        self.call_internal(po, params)
     }
 
     /// Invokes a plugin operation control operation.

@@ -76,22 +76,7 @@ pub enum PluginOp {
     /// From a plugin-processable structure, write the frame on the wire.
     WriteFrame(u64),
 
-    // These derive from quic-invariants, from version.
-    // Note that parsing them is an invariant, so we just have process here.
-    ProcessLongHeader(u32),
-    ProcessShortHeader(u32),
-    ProcessVersionNegotiation,
-
-    GetPacketToSend,
-
-    // I think at some point there should have some value here.
-    // TODO not supported yet.
-    DecryptPacket,
-
-    OnPacketProcessed,
-
-    OnPacketSent,
-    SetLossDetectionTimer,
+    #[doc(hidden)]
     UpdateRtt,
 
     /// For experimentation purposes.
@@ -149,24 +134,6 @@ impl PluginOp {
                 Ok(frame_type) => (PluginOp::DecodeTransportParameter(frame_type), anchor),
                 Err(_) => panic!("Invalid protocol operation name"),
             }
-        } else if name.starts_with("process_long_header_") {
-            match extract_po_param(name) {
-                Ok(version) => match u32::try_from(version) {
-                    Ok(version) => (PluginOp::ProcessLongHeader(version), anchor),
-                    Err(_) => panic!("Invalid protocol operation name"),
-                },
-                Err(_) => panic!("Invalid protocol operation name"),
-            }
-        } else if name.starts_with("process_short_header_") {
-            match extract_po_param(name) {
-                Ok(version) => match u32::try_from(version) {
-                    Ok(version) => (PluginOp::ProcessShortHeader(version), anchor),
-                    Err(_) => panic!("Invalid protocol operation name"),
-                },
-                Err(_) => panic!("Invalid protocol operation name"),
-            }
-        } else if name == "process_version_negotiation" {
-            (PluginOp::ProcessVersionNegotiation, anchor)
         } else if name.starts_with("write_transport_parameter_") {
             match extract_po_param(name) {
                 Ok(frame_type) => (PluginOp::WriteTransportParameter(frame_type), anchor),
@@ -227,16 +194,6 @@ impl PluginOp {
                 Ok(val) => (PluginOp::OnPluginTimeout(val), anchor),
                 Err(e) => panic!("Invalid protocol operation name: {e}"),
             }
-        } else if name == "get_packet_to_send" {
-            (PluginOp::GetPacketToSend, anchor)
-        } else if name == "decrypt_packet" {
-            (PluginOp::DecryptPacket, anchor)
-        } else if name == "on_packet_processed" {
-            (PluginOp::OnPacketProcessed, anchor)
-        } else if name == "on_packet_sent" {
-            (PluginOp::OnPacketSent, anchor)
-        } else if name == "set_loss_detection_timer" {
-            (PluginOp::SetLossDetectionTimer, anchor)
         } else if name == "update_rtt" {
             (PluginOp::UpdateRtt, anchor)
         } else {

@@ -709,23 +709,17 @@ impl Deref for OctetsPtr {
     type Target = Octets<'static>;
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: Valid only if `Octets` is pinned.
+        // SAFETY: Valid only if `Octets` is pinned and in single-thread.
         unsafe { &**self.0 }
     }
 }
 
 impl DerefMut for OctetsPtr {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        // SAFETY: Valid only if `Octets` is pinned.
+        // SAFETY: Valid only if `Octets` is pinned and in single-thread.
         unsafe { &mut **self.0 }
     }
 }
-
-// impl From<OctetsPtr> for &mut octets::Octets<'static> {
-//     fn from(mut value: OctetsPtr) -> Self {
-//         unsafe {&mut **value.0 }
-//     }
-// }
 
 /// A (safe) raw pointer to an pinned [`OctetsMut`].
 ///
@@ -744,14 +738,14 @@ impl Deref for OctetsMutPtr {
     type Target = OctetsMut<'static>;
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: Valid only if `OctetsMut` is pinned.
+        // SAFETY: Valid only if `OctetsMut` is pinned and in single-thread.
         unsafe { &**self.0 }
     }
 }
 
 impl DerefMut for OctetsMutPtr {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        // SAFETY: Valid only if `OctetsMut` is pinned.
+        // SAFETY: Valid only if `OctetsMut` is pinned and in single-thread.
         unsafe { &mut **self.0 }
     }
 }
