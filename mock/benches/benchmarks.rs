@@ -4,11 +4,10 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use pluginop::{
     common::{
         quic::{Frame, FrameRegistration, MaxDataFrame, QVal},
-        Anchor, PluginOp, PluginVal,
+        PluginOp, PluginVal,
     },
     octets::{Octets, OctetsMut},
     plugin::Env,
-    Error,
 };
 use pluginop::{Exports, Function, FunctionEnv, FunctionEnvMut, Store};
 use pluginop_mock::{ConnectionDummy, PluginizableConnectionDummy};
@@ -26,34 +25,8 @@ fn exports_func_external_test(
     exports
 }
 
-// Normal user.
+// Normal user. This may need to be updated if run as root.
 static BASE: &'static str = "..";
-// Root user.
-// static BASE: &'static str = "/Users/qdeconinck/code/pluginop";
-
-fn memory_allocation_bench(pcd: &mut PluginizableConnectionDummy) {
-    let (po, _) = (PluginOp::Init, Anchor::Replace);
-    let ph = pcd.get_ph_mut();
-    let res = ph.call(&po, &[]);
-    assert!(res.is_ok());
-    let (po, a) = PluginOp::from_name("check_data");
-    assert!(pcd.get_ph().provides(&po, a));
-    let ph = pcd.get_ph_mut();
-    let res = ph.call(&po, &[]);
-    assert!(res.is_ok());
-    assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
-    let (po2, a2) = PluginOp::from_name("free_data");
-    assert!(pcd.get_ph().provides(&po2, a2));
-    let ph = pcd.get_ph_mut();
-    let _ = ph.call(&po2, &[]);
-    let res = ph.call(&po, &[]);
-    assert!(res.is_err());
-    if let Error::OperationError(e) = res.unwrap_err() {
-        assert_eq!(e, -1);
-    } else {
-        assert!(false);
-    }
-}
 
 fn static_memory(pcd: &mut PluginizableConnectionDummy) {
     let (po2, a2) = PluginOp::from_name("set_values");
@@ -66,7 +39,6 @@ fn static_memory(pcd: &mut PluginizableConnectionDummy) {
     let ph = pcd.get_ph_mut();
     let res = ph.call(&po, &[]);
     assert!(res.is_err());
-    // assert_eq!(res.unwrap_err(), pluginop::Error::OperationError(64));
 }
 
 fn input_outputs(pcd: &mut PluginizableConnectionDummy) {
@@ -190,10 +162,9 @@ fn super_frame(pcd: &mut PluginizableConnectionDummy, orig_buf: &mut [u8]) {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    // First test
+    // Only run and return.
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-
     let path = [BASE, "/tests/simple-wasm/simple_wasm.wasm"]
         .join("")
         .to_string();
@@ -204,23 +175,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let ph = pcd.get_ph_mut();
     c.bench_function("run and return", |b| b.iter(|| ph.call(&po, &[])));
 
-    // Second test
-    let mut pcd =
-        PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    let path = [BASE, "/tests/memory-allocation/memory_allocation.wasm"]
-        .join("")
-        .to_string();
-    let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
-    assert!(ok.is_ok());
-    let (po2, a2) = PluginOp::from_name("free_data");
-    assert!(pcd.get_ph().provides(&po2, a2));
-    let ph = pcd.get_ph_mut();
-    let _ = ph.call(&po2, &[]);
-    c.bench_function("memory allocation", |b| {
-        b.iter(|| memory_allocation_bench(&mut pcd))
-    });
-
-    // Third test
+    // Interact with static memory of the plugin.
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = [BASE, "/tests/static-memory/static_memory.wasm"]
@@ -230,17 +185,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     assert!(ok.is_ok());
     c.bench_function("static memory", |b| b.iter(|| static_memory(&mut pcd)));
 
-    // Fourth test
-    // let mut pcd =
-    //     PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-    // let path = [BASE, "/tests/inputs-support/inputs_support.wasm"]
-    //     .join("")
-    //     .to_string();
-    // let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
-    // assert!(ok.is_ok());
-    // c.bench_function("inputs support", |b| b.iter(|| static_memory(&mut pcd)));
-
-    // Fifth test
+    // Play with plugin inputs and outputs interfaces.
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = [BASE, "/tests/input-outputs/input_outputs.wasm"]
@@ -250,7 +195,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     assert!(ok.is_ok());
     c.bench_function("input outputs", |b| b.iter(|| input_outputs(&mut pcd)));
 
-    // Sixth test
+    // Fake the process max data frame operation.
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     let path = [BASE, "/tests/increase-max-data/increase_max_data.wasm"]
@@ -262,16 +207,16 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| increase_max_data(&mut pcd))
     });
 
-    // Seventh test
+    // Bench the whole time to load plugins.
     c.bench_function("loading plugins", |b| b.iter(|| loading_plugin()));
 
-    // Seventh test
+    // Bench the whole time (loading included) to change a plugin operation behavior.
     c.bench_function("first pluginop", |b| b.iter(|| first_pluginop()));
 
-    // Eigth test
+    // To test the helper macro.
     c.bench_function("macro simple", |b| b.iter(|| macro_simple()));
 
-    // Ninth, tenth and eleventh tests.
+    // Max data, with a native implementation.
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
     pcd.get_ph_mut()
@@ -288,6 +233,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("max-data send and receive", |b| {
         b.iter(|| max_data(&mut pcd, &mut orig_buf))
     });
+
     // The exact same behavior, but with a WASM plugin.
     let mut pcd =
         PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);

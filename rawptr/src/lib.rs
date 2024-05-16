@@ -1,5 +1,9 @@
+//! An internal crate to offer a safe interface over raw pointers
+//! to **pinned** types.
+
 use std::{
     fmt::{Debug, Pointer},
+    io::Cursor,
     ops::{Deref, DerefMut},
 };
 
@@ -12,8 +16,8 @@ pub struct RawPtr<T: ?Sized> {
 impl<T: ?Sized> RawPtr<T> {
     /// Creates a new raw pointer to `T`.
     ///
-    /// While this method is safe per se, using the produced raw pointer is safe only if `ptr`
-    /// references a pinned structure that is `!Unpin`.
+    /// SAFETY: While this method is safe per se, the whole safety of all the methods of the
+    /// `RawPtr` wrapper relies on `ptr` referencing a pinned structure that is `!Unpin`.
     pub fn new(ptr: *const T) -> Self {
         Self { inner: ptr }
     }
@@ -77,10 +81,10 @@ pub struct RawMutPtr<T: ?Sized> {
 }
 
 impl<T: ?Sized> RawMutPtr<T> {
-    /// Creates a new raw pointer to `T`.
+    /// Creates a new raw mutable pointer to `T`.
     ///
-    /// While this method is safe per se, using the produced raw pointer is safe only if `ptr`
-    /// references a pinned structure that is `!Unpin`.
+    /// SAFETY: While this method is safe per se, the whole safety of all the methods of the
+    /// `RawMutPtr` wrapper relies on `ptr` referencing a pinned structure that is `!Unpin`.
     pub fn new(ptr: *mut T) -> Self {
         Self { inner: ptr }
     }
@@ -144,3 +148,59 @@ unsafe impl<T: ?Sized> Send for RawMutPtr<T> {}
 // SAFETY: Only safe if T is pinned AND if the underlying reference is not moved out. In the
 // current code, we only use this type on pinned variables.
 unsafe impl<T: ?Sized> Sync for RawMutPtr<T> {}
+
+use bytes::{Bytes, BytesMut};
+
+/// A (safe) wrapper over a raw pointer to [`Cursor<Bytes>`]
+#[derive(Debug)]
+pub struct CursorBytesPtr(RawMutPtr<Cursor<Bytes>>);
+
+impl Deref for CursorBytesPtr {
+    type Target = Cursor<Bytes>;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: Valid only if `Cursor` is pinned and in single-thread.
+        unsafe { &**self.0 }
+    }
+}
+
+impl DerefMut for CursorBytesPtr {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: Valid only if `Cursor` is pinned and in single-thread.
+        unsafe { &mut **self.0 }
+    }
+}
+
+impl From<&mut Cursor<Bytes>> for CursorBytesPtr {
+    fn from(value: &mut Cursor<Bytes>) -> Self {
+        // Don't forget the memory here since we have only a reference.
+        CursorBytesPtr(RawMutPtr::new(value as *const _ as *mut _))
+    }
+}
+
+/// A (safe) wrapper over a raw pointer to [`BytesMut`].
+#[derive(Debug)]
+pub struct BytesMutPtr(RawMutPtr<BytesMut>);
+
+impl Deref for BytesMutPtr {
+    type Target = BytesMut;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: Valid only if `BytesMut` is pinned and in single-thread.
+        unsafe { &**self.0 }
+    }
+}
+
+impl DerefMut for BytesMutPtr {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: Valid only if `BytesMut` is pinned and in single-thread.
+        unsafe { &mut **self.0 }
+    }
+}
+
+impl From<&mut BytesMut> for BytesMutPtr {
+    fn from(value: &mut BytesMut) -> Self {
+        // Don't forget the memory here since we have only a reference.
+        BytesMutPtr(RawMutPtr::new(value as *const _ as *mut _))
+    }
+}

@@ -76,22 +76,7 @@ pub enum PluginOp {
     /// From a plugin-processable structure, write the frame on the wire.
     WriteFrame(u64),
 
-    // These derive from quic-invariants, from version.
-    // Note that parsing them is an invariant, so we just have process here.
-    ProcessLongHeader(u32),
-    ProcessShortHeader(u32),
-    ProcessVersionNegotiation,
-
-    GetPacketToSend,
-
-    // I think at some point there should have some value here.
-    // TODO not supported yet.
-    DecryptPacket,
-
-    OnPacketProcessed,
-
-    OnPacketSent,
-    SetLossDetectionTimer,
+    #[doc(hidden)]
     UpdateRtt,
 
     /// For experimentation purposes.
@@ -102,20 +87,20 @@ pub enum PluginOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Anchor {
     /// Execute just before calling the operation. Cannot modify the running context.
-    Pre,
+    Before,
     /// Execute in place of the operation. Can modify the running context.
-    Replace,
+    Define,
     /// Execute just after returning from the operation. Cannot modify the running context.
-    Post,
+    After,
 }
 
 impl Anchor {
     /// Returns an index value for the Anchor.
     pub fn index(&self) -> usize {
         match self {
-            Anchor::Pre => 0,
-            Anchor::Replace => 1,
-            Anchor::Post => 2,
+            Anchor::Before => 0,
+            Anchor::Define => 1,
+            Anchor::After => 2,
         }
     }
 }
@@ -131,11 +116,15 @@ impl PluginOp {
     /// FIXME find a more idiomatic way
     pub fn from_name(name: &str) -> (PluginOp, Anchor) {
         let (name, anchor) = if let Some(po_name) = name.strip_prefix("pre_") {
-            (po_name, Anchor::Pre)
+            (po_name, Anchor::Before)
+        } else if let Some(po_name) = name.strip_prefix("before_") {
+            (po_name, Anchor::Before)
         } else if let Some(po_name) = name.strip_prefix("post_") {
-            (po_name, Anchor::Post)
+            (po_name, Anchor::After)
+        } else if let Some(po_name) = name.strip_prefix("after_") {
+            (po_name, Anchor::After)
         } else {
-            (name, Anchor::Replace)
+            (name, Anchor::Define)
         };
 
         if name == "init" {
@@ -145,24 +134,6 @@ impl PluginOp {
                 Ok(frame_type) => (PluginOp::DecodeTransportParameter(frame_type), anchor),
                 Err(_) => panic!("Invalid protocol operation name"),
             }
-        } else if name.starts_with("process_long_header_") {
-            match extract_po_param(name) {
-                Ok(version) => match u32::try_from(version) {
-                    Ok(version) => (PluginOp::ProcessLongHeader(version), anchor),
-                    Err(_) => panic!("Invalid protocol operation name"),
-                },
-                Err(_) => panic!("Invalid protocol operation name"),
-            }
-        } else if name.starts_with("process_short_header_") {
-            match extract_po_param(name) {
-                Ok(version) => match u32::try_from(version) {
-                    Ok(version) => (PluginOp::ProcessShortHeader(version), anchor),
-                    Err(_) => panic!("Invalid protocol operation name"),
-                },
-                Err(_) => panic!("Invalid protocol operation name"),
-            }
-        } else if name == "process_version_negotiation" {
-            (PluginOp::ProcessVersionNegotiation, anchor)
         } else if name.starts_with("write_transport_parameter_") {
             match extract_po_param(name) {
                 Ok(frame_type) => (PluginOp::WriteTransportParameter(frame_type), anchor),
@@ -223,16 +194,6 @@ impl PluginOp {
                 Ok(val) => (PluginOp::OnPluginTimeout(val), anchor),
                 Err(e) => panic!("Invalid protocol operation name: {e}"),
             }
-        } else if name == "get_packet_to_send" {
-            (PluginOp::GetPacketToSend, anchor)
-        } else if name == "decrypt_packet" {
-            (PluginOp::DecryptPacket, anchor)
-        } else if name == "on_packet_processed" {
-            (PluginOp::OnPacketProcessed, anchor)
-        } else if name == "on_packet_sent" {
-            (PluginOp::OnPacketSent, anchor)
-        } else if name == "set_loss_detection_timer" {
-            (PluginOp::SetLossDetectionTimer, anchor)
         } else if name == "update_rtt" {
             (PluginOp::UpdateRtt, anchor)
         } else {

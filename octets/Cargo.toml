@@ -1,7 +1,7 @@
 [package]
 name = "pluginop-octets"
-version = "0.2.0"
-authors = ["Alessandro Ghedini <alessandro@ghedini.me>"]
+version = "0.1.0"
+authors = ["Alessandro Ghedini <alessandro@ghedini.me>", "Quentin De Coninck <quentin.deconinck@umons.ac.be>"]
 edition = "2018"
 description = "Zero-copy abstraction for parsing and constructing network packets"
 repository = "https://github.com/cloudflare/quiche"

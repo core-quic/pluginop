@@ -24,7 +24,7 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-/// Zero-copy abstraction for parsing and constructing network packets.
+//! Zero-copy abstraction for parsing and constructing network packets.
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr;
@@ -692,7 +692,9 @@ pub const fn varint_parse_len(first: u8) -> usize {
     }
 }
 
-/// TODO: Actual implementation.
+/// A (safe) raw pointer to an pinned [`Octets`].
+///
+/// [`Octets`]: struct.Octets.html
 #[derive(Debug)]
 pub struct OctetsPtr(RawMutPtr<Octets<'static>>);
 
@@ -707,23 +709,21 @@ impl Deref for OctetsPtr {
     type Target = Octets<'static>;
 
     fn deref(&self) -> &Self::Target {
+        // SAFETY: Valid only if `Octets` is pinned and in single-thread.
         unsafe { &**self.0 }
     }
 }
 
 impl DerefMut for OctetsPtr {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: Valid only if `Octets` is pinned and in single-thread.
         unsafe { &mut **self.0 }
     }
 }
 
-// impl From<OctetsPtr> for &mut octets::Octets<'static> {
-//     fn from(mut value: OctetsPtr) -> Self {
-//         unsafe {&mut **value.0 }
-//     }
-// }
-
-/// TODO: Actual implementation.
+/// A (safe) raw pointer to an pinned [`OctetsMut`].
+///
+/// [`OctetsMut`]: struct.OctetsMut.html
 #[derive(Debug)]
 pub struct OctetsMutPtr(RawMutPtr<OctetsMut<'static>>);
 
@@ -738,12 +738,14 @@ impl Deref for OctetsMutPtr {
     type Target = OctetsMut<'static>;
 
     fn deref(&self) -> &Self::Target {
+        // SAFETY: Valid only if `OctetsMut` is pinned and in single-thread.
         unsafe { &**self.0 }
     }
 }
 
 impl DerefMut for OctetsMutPtr {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: Valid only if `OctetsMut` is pinned and in single-thread.
         unsafe { &mut **self.0 }
     }
 }

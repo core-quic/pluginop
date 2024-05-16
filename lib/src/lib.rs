@@ -1,18 +1,151 @@
+//! The core library enabling pluginization of operations.
+
 use std::{
     fmt::Debug,
+    io::Write,
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
     time::Instant,
 };
 
-use api::ConnectionToPlugin;
+use api::{CTPError, ConnectionToPlugin};
+use bytes::Buf;
 use common::PluginVal;
 use handler::PluginHandler;
-use plugin::{BytesMutPtr, CursorBytesPtr, Env};
+use plugin::Env;
 use pluginop_common::{quic, PluginOp};
-use pluginop_rawptr::RawMutPtr;
+use pluginop_octets::{OctetsMutPtr, OctetsPtr};
+use pluginop_rawptr::{BytesMutPtr, CursorBytesPtr, RawMutPtr};
 use unix_time::Instant as UnixInstant;
 use wasmer::RuntimeError;
+
+/// Permission that can be granted to plugins.
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq)]
+pub enum Permission {
+    /// Permission to save output (should be always granted)
+    Output,
+    /// Permission to store opaque values (should be always granted)
+    Opaque,
+    /// Permission to access the Connection state
+    ConnectionAccess,
+    /// Permission to access the write byte buffer
+    WriteBuffer,
+    /// Permission to access the read byte buffer
+    ReadBuffer,
+}
+
+/// An enum storing the actual content of `Bytes` that are not directly exposed
+/// to plugins. Some side utilities are provided to let plugins access these
+/// values under some conditions.
+#[derive(Debug)]
+pub enum BytesContent {
+    Copied(Vec<u8>),
+    ZeroCopy(OctetsPtr),
+    ZeroCopyMut(OctetsMutPtr),
+    CursorBytes(CursorBytesPtr),
+    BytesMut(BytesMutPtr),
+}
+
+impl BytesContent {
+    /// The number of bytes available to read.
+    pub fn read_len(&self) -> usize {
+        match self {
+            BytesContent::Copied(v) => v.len(),
+            BytesContent::ZeroCopy(o) => o.cap(),
+            BytesContent::ZeroCopyMut(_) => 0,
+            BytesContent::CursorBytes(c) => c.remaining(),
+            BytesContent::BytesMut(_) => 0,
+        }
+    }
+
+    pub fn write_len(&self) -> usize {
+        match self {
+            BytesContent::Copied(v) => v.capacity() - v.len(),
+            BytesContent::ZeroCopy(_) => 0,
+            BytesContent::ZeroCopyMut(o) => o.cap(),
+            BytesContent::CursorBytes(_) => 0,
+            BytesContent::BytesMut(b) => b.capacity() - b.len(),
+        }
+    }
+
+    /// Whether there is any bytes to read.
+    pub fn is_empty(&self) -> bool {
+        self.read_len() == 0
+    }
+
+    /// Drains `len` bytes of the `BytesContent` and writes them in the slice `w`.
+    pub fn write_into(&mut self, len: usize, mut w: &mut [u8]) -> Result<usize, CTPError> {
+        match self {
+            BytesContent::Copied(v) => w
+                .write(v.drain(..len).as_slice())
+                .map_err(|_| CTPError::BadBytes),
+            BytesContent::ZeroCopy(o) => {
+                let b = o.get_bytes(len).map_err(|_| CTPError::BadBytes)?;
+                w.copy_from_slice(b.buf());
+                Ok(len)
+            }
+            BytesContent::ZeroCopyMut(_) => Err(CTPError::BadBytes),
+            BytesContent::CursorBytes(c) => {
+                if c.remaining() < w.len() {
+                    return Err(CTPError::BadBytes);
+                }
+                c.copy_to_slice(w);
+                Ok(w.len())
+            }
+            BytesContent::BytesMut(_) => Err(CTPError::BadBytes),
+        }
+    }
+
+    /// Extends the `BytesContent` with the content of `r`.
+    pub fn extend_from(&mut self, r: &[u8]) -> Result<usize, CTPError> {
+        match self {
+            BytesContent::Copied(v) => {
+                v.extend_from_slice(r);
+                Ok(r.len())
+            }
+            BytesContent::ZeroCopy(_) => Err(CTPError::BadBytes),
+            BytesContent::ZeroCopyMut(o) => {
+                o.put_bytes(r).map_err(|_| CTPError::BadBytes)?;
+                Ok(r.len())
+            }
+            BytesContent::CursorBytes(_) => Err(CTPError::BadBytes),
+            BytesContent::BytesMut(b) => {
+                b.extend_from_slice(r);
+                Ok(r.len())
+            }
+        }
+    }
+}
+
+impl From<Vec<u8>> for BytesContent {
+    fn from(value: Vec<u8>) -> Self {
+        Self::Copied(value)
+    }
+}
+
+impl From<OctetsPtr> for BytesContent {
+    fn from(value: OctetsPtr) -> Self {
+        Self::ZeroCopy(value)
+    }
+}
+
+impl From<OctetsMutPtr> for BytesContent {
+    fn from(value: OctetsMutPtr) -> Self {
+        Self::ZeroCopyMut(value)
+    }
+}
+
+impl From<CursorBytesPtr> for BytesContent {
+    fn from(value: CursorBytesPtr) -> Self {
+        Self::CursorBytes(value)
+    }
+}
+
+impl From<BytesMutPtr> for BytesContent {
+    fn from(value: BytesMutPtr) -> Self {
+        Self::BytesMut(value)
+    }
+}
 
 /// Pluginization wrapper structure before the QUIC connection structure exists.
 ///
@@ -138,10 +271,6 @@ pub enum Error {
 
     /// There is no plugin function for the requested `PluginOp`.
     NoPluginFunction,
-}
-
-pub enum ProtoOpFunc<CTP: ConnectionToPlugin> {
-    ProcessFrame(fn(&mut CTP, quic::Frame, &quic::Header, quic::RcvInfo, epoch: u64, now: Instant)),
 }
 
 /// A trait allowing converting an host-implementation type to a `T` one, possibly

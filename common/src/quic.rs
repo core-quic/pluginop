@@ -1,3 +1,5 @@
+//! All QUIC-related common structures.
+
 use std::net::SocketAddr;
 
 use serde::{Deserialize, Serialize};

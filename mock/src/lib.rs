@@ -419,32 +419,6 @@ mod tests {
     }
 
     #[test]
-    fn memory_allocation() {
-        let mut pcd =
-            PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
-        let path = "../tests/memory-allocation/memory_allocation.wasm".to_string();
-        let ok = pcd.get_ph_mut().insert_plugin_testing(&path.into());
-        assert!(ok.is_ok());
-        let (po, a) = PluginOp::from_name("check_data");
-        assert!(pcd.get_ph().provides(&po, a));
-        let ph = pcd.0.get_ph_mut();
-        let res = ph.call(&po, &[]);
-        assert!(res.is_ok());
-        assert_eq!(*res.unwrap(), [PluginVal::I64(6)]);
-        let (po2, a2) = PluginOp::from_name("free_data");
-        assert!(pcd.get_ph().provides(&po2, a2));
-        let ph = pcd.0.get_ph_mut();
-        let _ = ph.call(&po2, &[]);
-        let res = ph.call(&po, &[]);
-        assert!(res.is_err());
-        if let Error::OperationError(e) = res.unwrap_err() {
-            assert_eq!(e, -1);
-        } else {
-            assert!(false);
-        }
-    }
-
-    #[test]
     fn static_memory() {
         let mut pcd =
             PluginizableConnectionDummy::new_pluginizable_connection(exports_func_external_test);
@@ -776,7 +750,7 @@ mod tests {
         // operations.
         let (po, a) = (
             PluginOp::DecodeTransportParameter(0xAAAAAAAA),
-            Anchor::Replace,
+            Anchor::Define,
         );
         assert!(pcd.0.get_ph().provides(&po, a));
         let ph = pcd.0.get_ph_mut();

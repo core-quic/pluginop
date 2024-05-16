@@ -1,3 +1,5 @@
+//! Definition of the API offered to the plugins.
+
 use std::path::Path;
 
 use pluginop_common::{
@@ -11,10 +13,16 @@ use crate::{
     PluginizableConnection,
 };
 
+/// Errors that can occur during the conversion of structures between the host
+/// implementation and the plugins.
 pub enum CTPError {
+    /// Type mismatch with what is expected.
     BadType,
+    /// Something is wrong with the (de)serialization process.
     SerializeError,
+    /// The actual type being the `Bytes` token is wrong.
     BadBytes,
+    /// File system error.
     FileError,
 }
 
@@ -131,49 +139,6 @@ fn save_outputs_from_plugin<CTP: ConnectionToPlugin>(
             0
         }
         Err(_) => -5,
-    }
-}
-
-/// Stores a value in an opaque, persistent store maintained by the host implementation. The stored
-/// value is identified by its tag.
-///
-/// Function intended to be part of the Plugin API.
-fn store_opaque_from_plugin<CTP: ConnectionToPlugin>(
-    mut env: FunctionEnvMut<Env<CTP>>,
-    tag: u64,
-    val: u32,
-) {
-    let env_data = env.data_mut();
-    env_data.opaque_values.insert(tag, val);
-}
-
-const OPAQUE_ERR_VALUE: u64 = u64::MAX;
-
-/// Gets the value associated to `tag` from the opaque, persistant store maintained by the host
-/// implementation. If the `tag` is not present in the store, returns `u32::MAX`.
-///
-/// Function intended to be part of the Plugin API.
-fn get_opaque_from_plugin<CTP: ConnectionToPlugin>(
-    mut env: FunctionEnvMut<Env<CTP>>,
-    tag: u64,
-) -> u64 {
-    let env_data = env.data_mut();
-    match env_data.opaque_values.get(&tag) {
-        Some(v) => u64::from(*v),
-        None => OPAQUE_ERR_VALUE,
-    }
-}
-
-/// Removes the value associated to `tag` for the opaque, persistant store maintained by the host
-/// implementation.
-fn remove_opaque_from_plugin<CTP: ConnectionToPlugin>(
-    mut env: FunctionEnvMut<Env<CTP>>,
-    tag: u64,
-) -> u64 {
-    let env_data = env.data_mut();
-    match env_data.opaque_values.remove(&tag) {
-        Some(v) => u64::from(v),
-        None => OPAQUE_ERR_VALUE,
     }
 }
 
@@ -811,9 +776,6 @@ pub fn get_imports_with<CTP: ConnectionToPlugin>(
     // Place here all the functions that are common to any host.
     exports_insert!(exports, store, env, save_output_from_plugin);
     exports_insert!(exports, store, env, save_outputs_from_plugin);
-    exports_insert!(exports, store, env, store_opaque_from_plugin);
-    exports_insert!(exports, store, env, get_opaque_from_plugin);
-    exports_insert!(exports, store, env, remove_opaque_from_plugin);
     exports_insert!(exports, store, env, get_input_from_plugin);
     exports_insert!(exports, store, env, get_inputs_from_plugin);
     exports_insert!(exports, store, env, print_from_plugin);
