@@ -48,12 +48,6 @@ extern "C" {
     fn save_output_from_plugin(ptr: WASMPtr, len: WASMLen) -> APIResult;
     /* Output function to call only once, with all the outputs */
     fn save_outputs_from_plugin(ptr: WASMPtr, len: WASMLen) -> APIResult;
-    /* Store opaque value */
-    fn store_opaque_from_plugin(tag: u64, ptr: WASMPtr);
-    /* Get opaque value */
-    fn get_opaque_from_plugin(tag: u64) -> u64;
-    /* Remove opaque value */
-    fn remove_opaque_from_plugin(tag: u64) -> u64;
     /* Classical debug function, from
      * https://github.com/wasmerio/wasmer-rust-example/blob/master/examples/string.rs */
     fn print_from_plugin(ptr: WASMPtr, len: WASMLen);
@@ -145,32 +139,6 @@ impl PluginEnv {
         } {
             0 => Ok(()),
             _ => Err(Error::APICallError),
-        }
-    }
-
-    /// Store an opaque value.
-    #[deprecated(note = "Please use static variables, possibly with Mutex and `lazy_static` macro")]
-    pub fn store_opaque(&self, tag: u64, ptr: u32) {
-        unsafe { store_opaque_from_plugin(tag, ptr) }
-    }
-
-    /// Get an opaque value.
-    #[deprecated(note = "Please use static variables, possibly with Mutex and `lazy_static` macro")]
-    pub fn get_opaque(&self, tag: u64) -> Option<u32> {
-        let ret = unsafe { get_opaque_from_plugin(tag) };
-        match u32::try_from(ret) {
-            Ok(r) => Some(r),
-            Err(_) => None,
-        }
-    }
-
-    /// Remove an opaque value and returns it.
-    #[deprecated(note = "Please use static variables, possibly with Mutex and `lazy_static` macro")]
-    pub fn remove_opaque(&self, tag: u64) -> Option<u32> {
-        let ret = unsafe { remove_opaque_from_plugin(tag) };
-        match u32::try_from(ret) {
-            Ok(r) => Some(r),
-            Err(_) => None,
         }
     }
 

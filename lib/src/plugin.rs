@@ -117,9 +117,6 @@ pub struct Env<CTP: ConnectionToPlugin> {
     /// Enables a plugin to output more than one (serializable) value, as returning more than 1
     /// output in a function is not FFI safe.
     pub outputs: Pin<PluginValArray>,
-    /// Store for opaque values used by the plugin. Typically, it contains pointers, and WASM
-    /// pointers are 32-bit values.
-    pub opaque_values: Pin<Box<FnvHashMap<u64, u32>>>,
     /// The files currently in use by the underlying plugin.
     files: Vec<UnsafeCell<File>>,
 }
@@ -134,7 +131,6 @@ pub(crate) fn create_env<CTP: ConnectionToPlugin>(ph: RawMutPtr<PluginHandler<CT
         timer_events: Vec::new(),
         inputs: Pin::new(PluginValArray::default()),
         outputs: Pin::new(PluginValArray::default()),
-        opaque_values: Box::pin(FnvHashMap::default()),
         files: Vec::new(),
     }
 }
