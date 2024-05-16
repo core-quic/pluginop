@@ -14,8 +14,8 @@ use common::PluginVal;
 use handler::PluginHandler;
 use plugin::Env;
 use pluginop_common::{quic, PluginOp};
-use pluginop_octets::{OctetsMutPtr, OctetsPtr};
-use pluginop_rawptr::{BytesMutPtr, CursorBytesPtr, RawMutPtr};
+pub use pluginop_octets::{OctetsMutPtr, OctetsPtr};
+pub use pluginop_rawptr::{BytesMutPtr, CursorBytesPtr, RawMutPtr};
 use unix_time::Instant as UnixInstant;
 use wasmer::RuntimeError;
 
