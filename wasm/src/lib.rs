@@ -90,6 +90,13 @@ extern "C" {
     fn get_unix_instant_from_plugin(res_ptr: WASMPtr, res_len: WASMLen) -> APIResult;
     /* Fully enable the plugin operations */
     fn enable_from_plugin();
+    /* Gets a recovery field */
+    fn get_recovery_from_plugin(
+        field_ptr: WASMPtr,
+        field_len: WASMLen,
+        res_ptr: WASMPtr,
+        res_len: WASMLen,
+    ) -> APIResult;
     /* Sets a recovery field */
     fn set_recovery_from_plugin(
         field_ptr: WASMPtr,
@@ -105,45 +112,6 @@ extern "C" {
         res_ptr: WASMPtr,
         res_len: WASMLen,
     ) -> APIResult;
-    // ----- TODOs -----
-    /* Functions for the buffer to read */
-    fn buffer_get_bytes_from_plugin(ptr: WASMPtr, len: WASMLen) -> APIResult;
-    /* Functions for the buffer to write */
-    fn buffer_put_bytes_from_plugin(ptr: WASMPtr, len: WASMLen) -> APIResult;
-    /* Subject to many API changes */
-    fn call_proto_op_from_plugin(
-        po_ptr: WASMPtr,
-        po_len: WASMLen,
-        po_args_ptr: WASMPtr,
-        po_args_len: WASMLen,
-        po_input_ptr: WASMPtr,
-        po_input_len: WASMLen,
-        po_res_ptr: WASMPtr,
-        po_res_len: WASMLen,
-    );
-    /* Gets a recovery field */
-    fn get_recovery_from_plugin(
-        field_ptr: WASMPtr,
-        field_len: WASMLen,
-        res_ptr: WASMPtr,
-        res_len: WASMLen,
-    ) -> APIResult;
-    /* Gets a sent packet field */
-    fn get_sent_packet_from_plugin(
-        field_ptr: WASMPtr,
-        field_len: WASMLen,
-        res_ptr: WASMPtr,
-        res_len: WASMLen,
-    ) -> APIResult;
-    /* Get a received packet field */
-    fn get_rcv_packet_from_plugin(
-        field_ptr: WASMPtr,
-        field_len: WASMLen,
-        res_ptr: WASMPtr,
-        res_len: WASMLen,
-    ) -> APIResult;
-    /* Generates a connection ID */
-    fn generate_connection_id_from_plugin(res_ptr: WASMPtr, res_len: WASMLen) -> APIResult;
 }
 
 /// A companion structure, always passed as first argument of any plugin operation function,
@@ -459,189 +427,5 @@ impl<T: Sync + Send> Deref for PluginCell<T> {
 unsafe impl<T: Send> Send for PluginCell<T> {}
 // SAFETY: only valid in single-threaded mode, which is the case in the scope of the plugins.
 unsafe impl<T: Sync> Sync for PluginCell<T> {}
-
-#[allow(dead_code)]
-mod todo {
-    use pluginop_common::{
-        quic::{self, ConnectionId},
-        APIResult, PluginOp, PluginVal, WASMLen, WASMPtr,
-    };
-    use serde::Deserialize;
-
-    use crate::{
-        buffer_get_bytes_from_plugin, buffer_put_bytes_from_plugin, call_proto_op_from_plugin,
-        generate_connection_id_from_plugin, get_rcv_packet_from_plugin,
-        get_sent_packet_from_plugin, PluginEnv, SIZE,
-    };
-
-    impl PluginEnv {
-        /// Gets a sent packet field.
-        fn get_sent_packet<'de, T>(field: quic::SentPacketField) -> T
-        where
-            T: Deserialize<'de>,
-        {
-            let serialized_field = postcard::to_allocvec(&field).expect("serialized field");
-            let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
-            unsafe {
-                // FIXME we should handle error.
-                get_sent_packet_from_plugin(
-                    serialized_field.as_ptr() as WASMPtr,
-                    serialized_field.len() as WASMLen,
-                    res.as_mut_ptr() as WASMPtr,
-                    SIZE as WASMLen,
-                );
-            }
-            let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-            postcard::from_bytes(slice).expect("no error")
-        }
-
-        /// Get a received packet field.
-        fn get_rcv_packet<'de, T>(field: quic::RcvPacketField) -> T
-        where
-            T: Deserialize<'de>,
-        {
-            let serialized_field = postcard::to_allocvec(&field).expect("serialized field");
-            let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
-            unsafe {
-                // FIXME we should handle error.
-                get_rcv_packet_from_plugin(
-                    serialized_field.as_ptr() as WASMPtr,
-                    serialized_field.len() as WASMLen,
-                    res.as_mut_ptr() as WASMPtr,
-                    SIZE as WASMLen,
-                );
-            }
-            let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-            postcard::from_bytes(slice).expect("no error")
-        }
-
-        /// Reads bytes from a buffer. The read bytes are consumed.
-        fn buffer_get_bytes(&self, b: &mut Vec<u8>) -> APIResult {
-            unsafe {
-                buffer_get_bytes_from_plugin(
-                    b.as_mut_slice() as *mut [u8] as *mut u8 as WASMPtr,
-                    b.len() as WASMLen,
-                )
-            }
-        }
-
-        /// Writes bytes in a buffer.
-        fn buffer_put_bytes(&self, b: &[u8]) -> i64 {
-            unsafe { buffer_put_bytes_from_plugin(b.as_ptr() as WASMPtr, b.len() as WASMLen) }
-        }
-
-        /// Reads a variable integer from the read buffer and advances it.
-        fn buffer_get_varint(&self) -> (i64, u64) {
-            let mut val: Vec<u8> = vec![0];
-            let read = self.buffer_get_bytes(&mut val);
-            if read != 1 {
-                return (read, 0);
-            }
-            let l = (val[0] & 0xC0) / 0x40;
-            // Already clear now the leading bits of first byte for parsing.
-            val[0] &= 0x3F;
-            let mut val2: Vec<u8> = Vec::new();
-            match l {
-                0 => {}
-                1 => val2.push(0),
-                2 => val2.extend_from_slice(&[0; 3]),
-                3 => val2.extend_from_slice(&[0; 7]),
-                _ => unreachable!(),
-            };
-            let read2 = self.buffer_get_bytes(&mut val2);
-            match l {
-                0 => {
-                    if read2 != 0 {
-                        return (read2, 0);
-                    }
-                }
-                1 => {
-                    if read2 != 1 {
-                        return (read2, 0);
-                    }
-                }
-                2 => {
-                    if read2 != 3 {
-                        return (read2, 0);
-                    }
-                }
-                3 => {
-                    if read2 != 7 {
-                        return (read2, 0);
-                    }
-                }
-                _ => unreachable!(),
-            }
-            val.extend_from_slice(&val2);
-            let v: u64 = match l {
-                0 => val[0].into(),
-                1 => u16::from_be_bytes(val[0..2].try_into().unwrap()).into(),
-                2 => u32::from_be_bytes(val[0..4].try_into().unwrap()).into(),
-                3 => u64::from_be_bytes(val[0..8].try_into().unwrap()),
-                _ => unreachable!(),
-            };
-            (read + read2, v)
-        }
-
-        /// Writes a integer using variable-length encoding in the write buffer.
-        fn buffer_put_varint(&self, v: u64) -> i64 {
-            let mut vb = v.to_be_bytes();
-            let write_bytes: Vec<u8> = if v < 64 {
-                vb[7..8].to_vec()
-            } else if v < 16384 {
-                vb[6] |= 0x40;
-                vb[6..8].to_vec()
-            } else if v < 1073741824 {
-                vb[4] |= 0x80;
-                vb[4..8].to_vec()
-            } else {
-                vb[0] |= 0xc0;
-                vb[0..8].to_vec()
-            };
-            self.buffer_put_bytes(&write_bytes)
-        }
-
-        /// Calls the protocol operation `po` with the provided arguments.
-        fn call_protoop(
-            po: PluginOp,
-            args: Vec<PluginVal>,
-            inputs: Vec<PluginVal>,
-        ) -> Vec<PluginVal> {
-            let serialized_po = postcard::to_allocvec(&po).expect("serialized po");
-            let serialized_args = postcard::to_allocvec(&args).expect("serialized args");
-            let serialized_inputs = postcard::to_allocvec(&inputs).expect("serialized inputs");
-            let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
-            unsafe {
-                call_proto_op_from_plugin(
-                    serialized_po.as_ptr() as WASMPtr,
-                    serialized_po.len() as WASMLen,
-                    serialized_args.as_ptr() as WASMPtr,
-                    serialized_args.len() as WASMLen,
-                    serialized_inputs.as_ptr() as WASMPtr,
-                    serialized_inputs.len() as WASMLen,
-                    res.as_mut_ptr() as WASMPtr,
-                    SIZE as WASMLen,
-                );
-            }
-            let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-            postcard::from_bytes(slice).expect("no error")
-        }
-
-        /// Generates a connection ID for the connection and record it for the endpoint. Returns `None` if
-        /// the connection ID cannot be generated for some reason.
-        fn generate_connection_id() -> Option<ConnectionId> {
-            let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
-            let err = unsafe {
-                generate_connection_id_from_plugin(res.as_mut_ptr() as WASMPtr, SIZE as WASMLen)
-            };
-            if err != 0 {
-                return None;
-            }
-            let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-            let cid: ConnectionId = postcard::from_bytes(slice).expect("no error");
-            Some(cid)
-        }
-    }
-}
 
 pub mod fd;
