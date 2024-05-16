@@ -5,6 +5,7 @@ use unix_time::Instant as UnixInstant;
 
 use crate::{Bytes, ConversionError, PluginVal};
 
+/// Define how many times a frame should be considered sending in a single packet.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub enum FrameSendKind {
@@ -12,15 +13,24 @@ pub enum FrameSendKind {
     ManyPerPacket,
 }
 
+/// Determine in which order frames should be sent. The order may have some importance
+/// regarding the sending priority (an early scheduled frame would usually have more
+/// available bytes to write than a late one).
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
 pub enum FrameSendOrder {
+    /// Before the host implementation has scheduled any frame.
     First,
+    /// After the host implementation has scheduled ACK frame(s).
     AfterACK,
+    /// Before the host implementation has scheduled data frame(s) (STREAM).
     BeforeStream,
+    /// After the host implementation has scheduled all possible frames.
     End,
 }
 
+/// A registration, made by a plugin bytecode, to advertise to the host implementation
+/// its support of a specific frame type.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[repr(C)]
 pub struct FrameRegistration {
@@ -32,6 +42,7 @@ pub struct FrameRegistration {
 }
 
 impl FrameRegistration {
+    /// Create a new frame registration with the provided parameters.
     pub fn new(
         ty: u64,
         send_order: FrameSendOrder,
@@ -48,18 +59,22 @@ impl FrameRegistration {
         }
     }
 
+    /// Return the type of the frame that the registration supports.
     pub fn get_type(&self) -> u64 {
         self.ty
     }
 
+    /// Return the `FrameSendOrder` indicating when the frame should be scheduled.
     pub fn send_order(&self) -> FrameSendOrder {
         self.send_order
     }
 
+    /// Whether the related frame is ACK-eliciting.
     pub fn ack_eliciting(&self) -> bool {
         self.ack_eliciting
     }
 
+    /// Whether the related frame is considered for the congestion window.
     pub fn count_for_in_flight(&self) -> bool {
         self.count_in_flight
     }
@@ -69,7 +84,9 @@ impl FrameRegistration {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[repr(C)]
 pub enum Registration {
+    /// A transport parameter.
     TransportParameter(u64),
+    /// A frame.
     Frame(FrameRegistration),
 }
 

@@ -14,16 +14,46 @@ use std::{
 
 use fnv::FnvHashMap;
 use log::{error, warn};
-use pluginop_common::{Anchor, PluginOp, PluginVal};
+use pluginop_common::{Anchor, PluginInputType, PluginOp, PluginOutputType, PluginVal};
 use pluginop_octets::{OctetsMutPtr, OctetsPtr};
 use pluginop_rawptr::RawMutPtr;
-use wasmer::{FunctionEnv, Instance, Module, Store};
+use wasmer::{FunctionEnv, Instance, Module, Store, TypedFunction};
 
 use crate::{
     api::{get_imports_with, CTPError, ConnectionToPlugin},
     handler::{Permission, PluginHandler},
-    Error, POCode,
+    Error,
 };
+
+pub type PluginFunction = TypedFunction<PluginInputType, PluginOutputType>;
+
+#[derive(Default)]
+pub struct POCode {
+    pre: Option<PluginFunction>,
+    replace: Option<PluginFunction>,
+    post: Option<PluginFunction>,
+}
+
+impl Debug for POCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("POCode")
+            .field("pre", &self.pre.is_some())
+            .field("replace", &self.replace.is_some())
+            .field("post", &self.post.is_some())
+            .finish()
+    }
+}
+
+impl POCode {
+    /// Get the underlying PluginFunction associated to the provided `Anchor`.
+    pub(crate) fn get(&self, a: Anchor) -> Option<&PluginFunction> {
+        match a {
+            Anchor::Pre => self.pre.as_ref(),
+            Anchor::Replace => self.replace.as_ref(),
+            Anchor::Post => self.post.as_ref(),
+        }
+    }
+}
 
 /// An array of plugin-compatible values.
 #[derive(Debug, Default)]

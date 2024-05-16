@@ -6,51 +6,28 @@ use std::{
 };
 
 use api::ConnectionToPlugin;
-use common::{Anchor, PluginVal};
+use common::PluginVal;
 use handler::PluginHandler;
 use plugin::{BytesMutPtr, CursorBytesPtr, Env};
-use pluginop_common::{quic, PluginInputType, PluginOp, PluginOutputType};
+use pluginop_common::{quic, PluginOp};
 use pluginop_rawptr::RawMutPtr;
 use unix_time::Instant as UnixInstant;
-use wasmer::{RuntimeError, TypedFunction};
+use wasmer::RuntimeError;
 
-pub type PluginFunction = TypedFunction<PluginInputType, PluginOutputType>;
-
-#[derive(Default)]
-pub struct POCode {
-    pre: Option<PluginFunction>,
-    replace: Option<PluginFunction>,
-    post: Option<PluginFunction>,
-}
-
-impl Debug for POCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("POCode")
-            .field("pre", &self.pre.is_some())
-            .field("replace", &self.replace.is_some())
-            .field("post", &self.post.is_some())
-            .finish()
-    }
-}
-
-impl POCode {
-    /// Get the underlying PluginFunction associated to the provided `Anchor`.
-    pub(crate) fn get(&self, a: Anchor) -> Option<&PluginFunction> {
-        match a {
-            Anchor::Pre => self.pre.as_ref(),
-            Anchor::Replace => self.replace.as_ref(),
-            Anchor::Post => self.post.as_ref(),
-        }
-    }
-}
-
+/// Pluginization wrapper structure before the QUIC connection structure exists.
+///
+/// Some implementations first perform the TLS exchange before allocating a
+/// QUIC dedicated structure. Such a structure provides support for always-enabled
+/// plugin operations, but not for others.
 pub struct TLSBeforeQUIC<CTP: ConnectionToPlugin> {
     pub ph: PluginHandler<CTP>,
     _pin: PhantomPinned,
 }
 
 impl<CTP: ConnectionToPlugin> TLSBeforeQUIC<CTP> {
+    /// Create a `TLSBeforeQUIC` structure.
     pub fn new(exports_func: fn(&mut Store, &FunctionEnv<Env<CTP>>) -> Exports) -> Box<Self> {
+        // We return a `Box` to pin the structure.
         Box::new(Self {
             ph: PluginHandler::new(exports_func),
             _pin: PhantomPinned,
@@ -58,8 +35,11 @@ impl<CTP: ConnectionToPlugin> TLSBeforeQUIC<CTP> {
     }
 }
 
+/// Pluginization wrapper structure for a QUIC connection.
 pub struct PluginizableConnection<CTP: ConnectionToPlugin> {
+    /// The pluginization handler.
     pub ph: PluginHandler<CTP>,
+    /// The actual, wrapped connection structure.
     pub conn: CTP,
     _pin: PhantomPinned,
 }
@@ -73,30 +53,37 @@ impl<CTP: ConnectionToPlugin> PluginizableConnection<CTP> {
         }
     }
 
+    /// Create a new `PluginizableConnection`.
     pub fn new_pluginizable_connection(
         exports_func: fn(&mut Store, &FunctionEnv<Env<CTP>>) -> Exports,
         conn: CTP,
     ) -> Box<PluginizableConnection<CTP>> {
+        // We return a `Box` to pin the structure.
         Box::new(Self::new(exports_func, conn))
     }
 
+    /// Immutable reference to the inner connection structure.
     pub fn get_conn(&self) -> &CTP {
         &self.conn
     }
 
+    /// Mutable reference to the inner connection structure.
     pub fn get_conn_mut(&mut self) -> &mut CTP {
         &mut self.conn
     }
 
+    /// Immutable reference to the pluginization handler.
     pub fn get_ph(&self) -> &PluginHandler<CTP> {
         &self.ph
     }
 
+    /// Mutable reference to the pluginization handler.
     pub fn get_ph_mut(&mut self) -> &mut PluginHandler<CTP> {
         &mut self.ph
     }
 }
 
+/// A structure getting the parent structure of the current one.
 #[derive(Debug)]
 pub struct ParentReferencer<T> {
     inner: RawMutPtr<T>,
@@ -114,12 +101,14 @@ impl<T> Deref for ParentReferencer<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
+        // SAFETY: Only valid if T implements `!Unpin`.
         unsafe { &**self.inner }
     }
 }
 
 impl<T> DerefMut for ParentReferencer<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: Only valid if T implements `!Unpin`.
         unsafe { &mut **self.inner }
     }
 }

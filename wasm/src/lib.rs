@@ -1,4 +1,8 @@
 //! A sub-crate of `protocol-operation` that should be imported by plugins.
+//!
+//! Playing directly with WebAssembly export functions can be cumbersome.
+//! Instead, we propose a crate offering wrappers for these external calls,
+//! making the plugin development possible by only relying on safe Rust.
 
 use std::cell::UnsafeCell;
 use std::convert::TryInto;
@@ -21,9 +25,6 @@ pub use unix_time::Instant as UnixInstant;
 
 /// The maximum size of a result, may be subject to future changes.
 const SIZE: usize = 1500;
-
-// Playing directly with export functions can be cumbersome. Instead, we propose wrappers for these
-// external calls that are easier to use when developing plugins.
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Error {
@@ -287,26 +288,6 @@ impl PluginEnv {
         }
     }
 
-    /// Get a received packet field.
-    pub fn get_rcv_packet<'de, T>(field: quic::RcvPacketField) -> T
-    where
-        T: Deserialize<'de>,
-    {
-        let serialized_field = postcard::to_allocvec(&field).expect("serialized field");
-        let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
-        unsafe {
-            // FIXME we should handle error.
-            get_rcv_packet_from_plugin(
-                serialized_field.as_ptr() as WASMPtr,
-                serialized_field.len() as WASMLen,
-                res.as_mut_ptr() as WASMPtr,
-                SIZE as WASMLen,
-            );
-        }
-        let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
-        postcard::from_bytes(slice).expect("no error")
-    }
-
     /// Gets an input. May panic.
     pub fn get_input<T>(&self, index: u32) -> Result<T>
     where
@@ -474,7 +455,8 @@ mod todo {
 
     use crate::{
         buffer_get_bytes_from_plugin, buffer_put_bytes_from_plugin, call_proto_op_from_plugin,
-        generate_connection_id_from_plugin, get_sent_packet_from_plugin, PluginEnv, SIZE,
+        generate_connection_id_from_plugin, get_rcv_packet_from_plugin,
+        get_sent_packet_from_plugin, PluginEnv, SIZE,
     };
 
     impl PluginEnv {
@@ -488,6 +470,26 @@ mod todo {
             unsafe {
                 // FIXME we should handle error.
                 get_sent_packet_from_plugin(
+                    serialized_field.as_ptr() as WASMPtr,
+                    serialized_field.len() as WASMLen,
+                    res.as_mut_ptr() as WASMPtr,
+                    SIZE as WASMLen,
+                );
+            }
+            let slice = unsafe { std::slice::from_raw_parts(res.as_ptr(), SIZE) };
+            postcard::from_bytes(slice).expect("no error")
+        }
+
+        /// Get a received packet field.
+        fn get_rcv_packet<'de, T>(field: quic::RcvPacketField) -> T
+        where
+            T: Deserialize<'de>,
+        {
+            let serialized_field = postcard::to_allocvec(&field).expect("serialized field");
+            let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
+            unsafe {
+                // FIXME we should handle error.
+                get_rcv_packet_from_plugin(
                     serialized_field.as_ptr() as WASMPtr,
                     serialized_field.len() as WASMLen,
                     res.as_mut_ptr() as WASMPtr,
