@@ -1,3 +1,5 @@
+//! Plugin-side interface to file system API.
+
 use std::{
     io::{Read, Write},
     path::Path,

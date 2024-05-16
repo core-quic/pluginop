@@ -776,7 +776,7 @@ mod tests {
         // operations.
         let (po, a) = (
             PluginOp::DecodeTransportParameter(0xAAAAAAAA),
-            Anchor::Replace,
+            Anchor::Define,
         );
         assert!(pcd.0.get_ph().provides(&po, a));
         let ph = pcd.0.get_ph_mut();

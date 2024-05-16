@@ -1,9 +1,11 @@
+//! Operations relative to a single loaded plugin.
+
 use std::{
     cell::UnsafeCell,
     collections::BTreeSet,
     fmt::Debug,
     fs::File,
-    io::{Cursor, Write},
+    io::Write,
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
@@ -15,20 +17,19 @@ use std::{
 use fnv::FnvHashMap;
 use log::{error, warn};
 use pluginop_common::{Anchor, PluginInputType, PluginOp, PluginOutputType, PluginVal};
-use pluginop_octets::{OctetsMutPtr, OctetsPtr};
 use pluginop_rawptr::RawMutPtr;
 use wasmer::{FunctionEnv, Instance, Module, Store, TypedFunction};
 
 use crate::{
     api::{get_imports_with, CTPError, ConnectionToPlugin},
-    handler::{Permission, PluginHandler},
-    Error,
+    handler::PluginHandler,
+    Error, Permission,
 };
 
 pub type PluginFunction = TypedFunction<PluginInputType, PluginOutputType>;
 
 #[derive(Default)]
-pub struct POCode {
+struct POCode {
     pre: Option<PluginFunction>,
     replace: Option<PluginFunction>,
     post: Option<PluginFunction>,
@@ -48,9 +49,9 @@ impl POCode {
     /// Get the underlying PluginFunction associated to the provided `Anchor`.
     pub(crate) fn get(&self, a: Anchor) -> Option<&PluginFunction> {
         match a {
-            Anchor::Pre => self.pre.as_ref(),
-            Anchor::Replace => self.replace.as_ref(),
-            Anchor::Post => self.post.as_ref(),
+            Anchor::Before => self.pre.as_ref(),
+            Anchor::Define => self.replace.as_ref(),
+            Anchor::After => self.post.as_ref(),
         }
     }
 }
@@ -76,171 +77,9 @@ impl DerefMut for PluginValArray {
     }
 }
 
-#[derive(Debug)]
-pub struct CursorBytesPtr(RawMutPtr<std::io::Cursor<bytes::Bytes>>);
-
-impl Deref for CursorBytesPtr {
-    type Target = std::io::Cursor<bytes::Bytes>;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { &**self.0 }
-    }
-}
-
-impl DerefMut for CursorBytesPtr {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut **self.0 }
-    }
-}
-
-impl From<&mut Cursor<Bytes>> for CursorBytesPtr {
-    fn from(value: &mut Cursor<Bytes>) -> Self {
-        // Don't forget the memory here since we have only a reference.
-        CursorBytesPtr(RawMutPtr::new(value as *const _ as *mut _))
-    }
-}
-
-#[derive(Debug)]
-pub struct BytesMutPtr(RawMutPtr<BytesMut>);
-
-impl Deref for BytesMutPtr {
-    type Target = BytesMut;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { &**self.0 }
-    }
-}
-
-impl DerefMut for BytesMutPtr {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut **self.0 }
-    }
-}
-
-impl From<&mut BytesMut> for BytesMutPtr {
-    fn from(value: &mut BytesMut) -> Self {
-        // Don't forget the memory here since we have only a reference.
-        BytesMutPtr(RawMutPtr::new(value as *const _ as *mut _))
-    }
-}
-
-/// An enum storing the actual content of `Bytes` that are not directly exposed
-/// to plugins. Some side utilities are provided to let plugins access these
-/// values under some conditions.
-#[derive(Debug)]
-pub enum BytesContent {
-    Copied(Vec<u8>),
-    ZeroCopy(OctetsPtr),
-    ZeroCopyMut(OctetsMutPtr),
-    CursorBytes(CursorBytesPtr),
-    BytesMut(BytesMutPtr),
-}
-
-use bytes::{Buf, Bytes, BytesMut};
-
-impl BytesContent {
-    /// The number of bytes available to read.
-    pub fn read_len(&self) -> usize {
-        match self {
-            BytesContent::Copied(v) => v.len(),
-            BytesContent::ZeroCopy(o) => o.cap(),
-            BytesContent::ZeroCopyMut(_) => 0,
-            BytesContent::CursorBytes(c) => c.remaining(),
-            BytesContent::BytesMut(_) => 0,
-        }
-    }
-
-    pub fn write_len(&self) -> usize {
-        match self {
-            BytesContent::Copied(v) => v.capacity() - v.len(),
-            BytesContent::ZeroCopy(_) => 0,
-            BytesContent::ZeroCopyMut(o) => o.cap(),
-            BytesContent::CursorBytes(_) => 0,
-            BytesContent::BytesMut(b) => b.capacity() - b.len(),
-        }
-    }
-
-    /// Whether there is any bytes to read.
-    pub fn is_empty(&self) -> bool {
-        self.read_len() == 0
-    }
-
-    /// Drains `len` bytes of the `BytesContent` and writes them in the slice `w`.
-    pub fn write_into(&mut self, len: usize, mut w: &mut [u8]) -> Result<usize, CTPError> {
-        match self {
-            BytesContent::Copied(v) => w
-                .write(v.drain(..len).as_slice())
-                .map_err(|_| CTPError::BadBytes),
-            BytesContent::ZeroCopy(o) => {
-                let b = o.get_bytes(len).map_err(|_| CTPError::BadBytes)?;
-                w.copy_from_slice(b.buf());
-                Ok(len)
-            }
-            BytesContent::ZeroCopyMut(_) => Err(CTPError::BadBytes),
-            BytesContent::CursorBytes(c) => {
-                if c.remaining() < w.len() {
-                    return Err(CTPError::BadBytes);
-                }
-                c.copy_to_slice(w);
-                Ok(w.len())
-            }
-            BytesContent::BytesMut(_) => Err(CTPError::BadBytes),
-        }
-    }
-
-    /// Extends the `BytesContent` with the content of `r`.
-    pub fn extend_from(&mut self, r: &[u8]) -> Result<usize, CTPError> {
-        match self {
-            BytesContent::Copied(v) => {
-                v.extend_from_slice(r);
-                Ok(r.len())
-            }
-            BytesContent::ZeroCopy(_) => Err(CTPError::BadBytes),
-            BytesContent::ZeroCopyMut(o) => {
-                o.put_bytes(r).map_err(|_| CTPError::BadBytes)?;
-                Ok(r.len())
-            }
-            BytesContent::CursorBytes(_) => Err(CTPError::BadBytes),
-            BytesContent::BytesMut(b) => {
-                b.extend_from_slice(r);
-                Ok(r.len())
-            }
-        }
-    }
-}
-
-impl From<Vec<u8>> for BytesContent {
-    fn from(value: Vec<u8>) -> Self {
-        Self::Copied(value)
-    }
-}
-
-impl From<OctetsPtr> for BytesContent {
-    fn from(value: OctetsPtr) -> Self {
-        Self::ZeroCopy(value)
-    }
-}
-
-impl From<OctetsMutPtr> for BytesContent {
-    fn from(value: OctetsMutPtr) -> Self {
-        Self::ZeroCopyMut(value)
-    }
-}
-
-impl From<CursorBytesPtr> for BytesContent {
-    fn from(value: CursorBytesPtr) -> Self {
-        Self::CursorBytes(value)
-    }
-}
-
-impl From<BytesMutPtr> for BytesContent {
-    fn from(value: BytesMutPtr) -> Self {
-        Self::BytesMut(value)
-    }
-}
-
+/// A timer, requested by a plugin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TimerEvent {
+pub(crate) struct TimerEvent {
     /// When the timer event should take place.
     at: Instant,
     /// The internal identifier. This identifier is unique within the plugin.
@@ -255,6 +94,8 @@ impl TimerEvent {
     }
 }
 
+/// A companion structure to the plugin execution environment, containing plugin-specific
+/// data allowing the bytecode to interact with the host implementation.
 pub struct Env<CTP: ConnectionToPlugin> {
     /// The underlying plugin handler holding the plugin running this environment.
     ph: RawMutPtr<PluginHandler<CTP>>,
@@ -345,7 +186,8 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
         self.timer_events.first().map(|r| r.at)
     }
 
-    pub fn insert_timer_event(&mut self, v: TimerEvent) {
+    /// Insert a timer event.
+    pub(crate) fn insert_timer_event(&mut self, v: TimerEvent) {
         // If there is an element where the id is already there, update it.
         if let Some(te) = self.timer_events.iter_mut().find(|te| te.id == v.id) {
             *te = v;
@@ -356,7 +198,8 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
         self.timer_events.sort();
     }
 
-    pub fn pop_timer_event_if_earlier_than(&mut self, t: Instant) -> Option<TimerEvent> {
+    /// Pop a fired timer event, if any.
+    pub(crate) fn pop_timer_event_if_earlier_than(&mut self, t: Instant) -> Option<TimerEvent> {
         if let Some(te) = self.timer_events.first() {
             if te.at <= t {
                 // This is safe since we just checked that such an element exists.
@@ -367,7 +210,8 @@ impl<CTP: ConnectionToPlugin> Env<CTP> {
         None
     }
 
-    pub fn cancel_timer_event(&mut self, id: u64) -> Option<TimerEvent> {
+    /// Cancel a timer.
+    pub(crate) fn cancel_timer_event(&mut self, id: u64) -> Option<TimerEvent> {
         let mut cancelled = None;
         // This works, because we can only have a single id inside the timer events.
         self.timer_events.retain(|te| {
@@ -606,16 +450,16 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
                 has_anchor[a.index()] = true;
                 match pocodes.get_mut(&po) {
                     Some(poc) => match a {
-                        Anchor::Pre => poc.pre = Some(func),
-                        Anchor::Replace => poc.replace = Some(func),
-                        Anchor::Post => poc.post = Some(func),
+                        Anchor::Before => poc.pre = Some(func),
+                        Anchor::Define => poc.replace = Some(func),
+                        Anchor::After => poc.post = Some(func),
                     },
                     None => {
                         let mut poc = POCode::default();
                         match a {
-                            Anchor::Pre => poc.pre = Some(func),
-                            Anchor::Replace => poc.replace = Some(func),
-                            Anchor::Post => poc.post = Some(func),
+                            Anchor::Before => poc.pre = Some(func),
+                            Anchor::Define => poc.replace = Some(func),
+                            Anchor::After => poc.post = Some(func),
                         }
                         pocodes.insert(po, poc);
                     }
@@ -638,11 +482,7 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
             .as_mut(&mut self.store)
             .pop_timer_event_if_earlier_than(t)
         {
-            self.call(
-                &PluginOp::OnPluginTimeout(te.timer_id),
-                Anchor::Replace,
-                &[],
-            )?;
+            self.call(&PluginOp::OnPluginTimeout(te.timer_id), Anchor::Define, &[])?;
         }
 
         Ok(())
@@ -675,7 +515,7 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
         env_mut.instance = Arc::<Pin<Box<Instance>>>::downgrade(&self.instance);
 
         // And call a potential `init` method provided by the plugin.
-        match self.call(&PluginOp::Init, Anchor::Replace, &[]) {
+        match self.call(&PluginOp::Init, Anchor::Define, &[]) {
             Ok(_) | Err(Error::NoPluginFunction) => Ok(()),
             Err(e) => Err(e),
         }
@@ -707,9 +547,9 @@ impl<CTP: ConnectionToPlugin> Plugin<CTP> {
 
         let func = match self.pocodes.get(po) {
             Some(poc) => match anchor {
-                Anchor::Pre => poc.pre.as_ref(),
-                Anchor::Replace => poc.replace.as_ref(),
-                Anchor::Post => poc.post.as_ref(),
+                Anchor::Before => poc.pre.as_ref(),
+                Anchor::Define => poc.replace.as_ref(),
+                Anchor::After => poc.post.as_ref(),
             },
             None => None,
         };

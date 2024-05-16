@@ -1,4 +1,4 @@
-//! A sub-crate of `protocol-operation` that should be imported by plugins.
+//! A sub-crate of `pluginop` that should be imported by plugins.
 //!
 //! Playing directly with WebAssembly export functions can be cumbersome.
 //! Instead, we propose a crate offering wrappers for these external calls,
@@ -26,12 +26,18 @@ pub use unix_time::Instant as UnixInstant;
 /// The maximum size of a result, may be subject to future changes.
 const SIZE: usize = 1500;
 
+/// Errors that may occur when interacting with the Plugin API.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Error {
+    /// An error occurred in the host-side API function.
     APICallError,
+    /// Requested operation on [`Bytes`] is invalid.
     BadBytes,
+    /// Type mismatch with what is expected.
     BadType,
+    /// The internal plugin buffer is too short to carry the data.
     ShortInternalBuffer,
+    /// An error occurred during the (de)serialization process.
     SerializeError,
 }
 
@@ -140,11 +146,13 @@ extern "C" {
     fn generate_connection_id_from_plugin(res_ptr: WASMPtr, res_len: WASMLen) -> APIResult;
 }
 
+/// A companion structure, always passed as first argument of any plugin operation function,
+/// enabling the plugin to interact with the host implementation.
 #[repr(C)]
 pub struct PluginEnv(WASMPtr);
 
 impl PluginEnv {
-    /// Stores a new plugin output.
+    /// Store a new plugin output.
     pub fn save_output(&self, v: PluginVal) -> Result<()> {
         let serialized_value = postcard::to_allocvec(&v).map_err(|_| Error::SerializeError)?;
         match unsafe {
@@ -158,7 +166,7 @@ impl PluginEnv {
         }
     }
 
-    /// Stores a new plugin output.
+    /// Store all the plugin outputs.
     pub fn save_outputs(&self, v: &[PluginVal]) -> Result<()> {
         let serialized_value = postcard::to_allocvec(&v).map_err(|_| Error::SerializeError)?;
         match unsafe {
@@ -172,13 +180,13 @@ impl PluginEnv {
         }
     }
 
-    /// Stores an opaque value.
+    /// Store an opaque value.
     #[deprecated(note = "Please use static variables, possibly with Mutex and `lazy_static` macro")]
     pub fn store_opaque(&self, tag: u64, ptr: u32) {
         unsafe { store_opaque_from_plugin(tag, ptr) }
     }
 
-    /// Gets an opaque value.
+    /// Get an opaque value.
     #[deprecated(note = "Please use static variables, possibly with Mutex and `lazy_static` macro")]
     pub fn get_opaque(&self, tag: u64) -> Option<u32> {
         let ret = unsafe { get_opaque_from_plugin(tag) };
@@ -188,7 +196,7 @@ impl PluginEnv {
         }
     }
 
-    /// Removes an opaque value and returns it.
+    /// Remove an opaque value and returns it.
     #[deprecated(note = "Please use static variables, possibly with Mutex and `lazy_static` macro")]
     pub fn remove_opaque(&self, tag: u64) -> Option<u32> {
         let ret = unsafe { remove_opaque_from_plugin(tag) };
@@ -198,12 +206,12 @@ impl PluginEnv {
         }
     }
 
-    /// Prints the provided string on the standard output.
+    /// Print the provided string on the standard output.
     pub fn print(&self, s: &str) {
         unsafe { print_from_plugin(s.as_ptr() as WASMPtr, s.len() as WASMLen) }
     }
 
-    /// Gets a connection field.
+    /// Get a connection field.
     pub fn get_connection<T>(&self, field: quic::ConnectionField) -> Result<T>
     where
         T: TryFrom<PluginVal>,
@@ -227,7 +235,7 @@ impl PluginEnv {
         plugin_val.try_into().map_err(|_| Error::BadType)
     }
 
-    /// Sets a connection field.
+    /// Set a connection field.
     pub fn set_connection<T>(&mut self, field: quic::ConnectionField, v: T) -> Result<()>
     where
         T: Into<PluginVal>,
@@ -248,7 +256,7 @@ impl PluginEnv {
         }
     }
 
-    /// Gets a recovery field.
+    /// Get a recovery field.
     pub fn get_recovery<'de, T>(&self, field: quic::RecoveryField) -> T
     where
         T: Deserialize<'de>,
@@ -267,7 +275,7 @@ impl PluginEnv {
         postcard::from_bytes(slice).expect("no error")
     }
 
-    /// Sets a recovery field.
+    /// Set a recovery field.
     pub fn set_recovery<T>(&mut self, field: quic::RecoveryField, v: T) -> Result<()>
     where
         T: Into<PluginVal>,
@@ -288,7 +296,7 @@ impl PluginEnv {
         }
     }
 
-    /// Gets an input. May panic.
+    /// Get an input.
     pub fn get_input<T>(&self, index: u32) -> Result<T>
     where
         T: TryFrom<PluginVal>,
@@ -308,7 +316,7 @@ impl PluginEnv {
         input.try_into().map_err(|_| Error::SerializeError)
     }
 
-    /// Gets the inputs.
+    /// Get the inputs.
     pub fn get_inputs(&self) -> Result<Vec<PluginVal>> {
         let mut res = Vec::<u8>::with_capacity(SIZE).into_boxed_slice();
         if unsafe { get_inputs_from_plugin(res.as_mut_ptr() as WASMPtr, SIZE as WASMLen) } != 0 {
@@ -318,7 +326,7 @@ impl PluginEnv {
         postcard::from_bytes(slice).map_err(|_| Error::SerializeError)
     }
 
-    /// Reads some bytes and advances the related buffer (i.e., multiple calls gives different results).
+    /// Read some bytes and advances the related buffer (i.e., multiple calls give different results).
     pub fn get_bytes(&mut self, tag: u64, len: u64) -> Result<Vec<u8>> {
         let mut res = Vec::<u8>::with_capacity(len as usize).into_boxed_slice();
         let len =
@@ -330,7 +338,7 @@ impl PluginEnv {
         Ok(slice.to_vec())
     }
 
-    /// Writes some bytes and advances the related buffer (i.e., multiple calls gives different results).
+    /// Write some bytes and advances the related buffer (i.e., multiple calls gives different results).
     pub fn put_bytes(&mut self, tag: u64, b: &[u8]) -> Result<usize> {
         let written =
             unsafe { put_bytes_from_plugin(tag, b.as_ptr() as WASMPtr, b.len() as WASMLen) };
@@ -340,6 +348,8 @@ impl PluginEnv {
         Ok(written as usize)
     }
 
+    /// Perform a registration to the host implementation. This operation is usually performed during
+    /// the initialization of the plugin.
     pub fn register(&mut self, r: Registration) -> Result<()> {
         let serialized = postcard::to_allocvec(&r).map_err(|_| Error::SerializeError)?;
         match unsafe {
@@ -397,7 +407,7 @@ impl PluginEnv {
         unsafe { enable_from_plugin() };
     }
 
-    /// Invokes a plugin operation control operation.
+    /// Invoke a plugin operation control operation.
     pub fn poctl(&mut self, id: u64, params: &[PluginVal]) -> Result<Vec<PluginVal>> {
         let serialized_inputs =
             postcard::to_allocvec(&params).map_err(|_| Error::SerializeError)?;
@@ -427,9 +437,11 @@ impl<T> PluginCell<T> {
         Self(UnsafeCell::new(v))
     }
 
+    /// Get a mutable reference to the cell.
     // TODO: solve this lint.
     #[allow(clippy::mut_from_ref)]
     pub fn get_mut(&self) -> &mut T {
+        // SAFETY: only valid in single-threaded mode, which is the case in the scope of the plugins.
         unsafe { &mut *self.0.get() }
     }
 }
@@ -438,11 +450,14 @@ impl<T: Sync + Send> Deref for PluginCell<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
+        // SAFETY: only valid in single-threaded mode, which is the case in the scope of the plugins.
         unsafe { &*self.0.get() }
     }
 }
 
+// SAFETY: only valid in single-threaded mode, which is the case in the scope of the plugins.
 unsafe impl<T: Send> Send for PluginCell<T> {}
+// SAFETY: only valid in single-threaded mode, which is the case in the scope of the plugins.
 unsafe impl<T: Sync> Sync for PluginCell<T> {}
 
 #[allow(dead_code)]

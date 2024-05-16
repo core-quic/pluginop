@@ -32,7 +32,7 @@ static BASE: &'static str = "..";
 // static BASE: &'static str = "/Users/qdeconinck/code/pluginop";
 
 fn memory_allocation_bench(pcd: &mut PluginizableConnectionDummy) {
-    let (po, _) = (PluginOp::Init, Anchor::Replace);
+    let (po, _) = (PluginOp::Init, Anchor::Define);
     let ph = pcd.get_ph_mut();
     let res = ph.call(&po, &[]);
     assert!(res.is_ok());

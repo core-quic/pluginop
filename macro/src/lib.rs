@@ -1,3 +1,7 @@
+//! A set of attribute macros, to be used in the source code of the host implementation,
+//! to ease the process of making it pluginizable, e.g., by transforming a regular Rust
+//! function into a plugin operation.
+
 use darling::FromMeta;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
@@ -245,7 +249,7 @@ fn get_out_block(
             use pluginop::octets::OctetsPtr;
             let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph_mut());
             if let Some(ph) = ph {
-                if ph.provides(& #po_code, pluginop::common::Anchor::Replace) {
+                if ph.provides(& #po_code, pluginop::common::Anchor::Define) {
                     let params = & #param_code;
                     let res = ph.call(
                         & #po_code,
@@ -255,22 +259,22 @@ fn get_out_block(
 
                     #ret_block
                 } else {
-                    let has_pre = ph.provides(& #po_code, pluginop::common::Anchor::Pre);
-                    let has_post = ph.provides(& #po_code, pluginop::common::Anchor::Post);
-                    let params = if has_pre || has_post { Some(#param_code_prepost) } else { None };
-                    if has_pre {
+                    let has_before = ph.provides(& #po_code, pluginop::common::Anchor::Before);
+                    let has_after = ph.provides(& #po_code, pluginop::common::Anchor::After);
+                    let params = if has_before || has_after { Some(#param_code_prepost) } else { None };
+                    if has_before {
                         ph.call_direct(
                             & #po_code,
-                            pluginop::common::Anchor::Pre,
+                            pluginop::common::Anchor::Before,
                             params.as_ref().unwrap(),
                         ).ok();
                     }
                     let ret = self.#fn_name_internal(#(#fn_args,)*);
-                    if has_post {
+                    if has_after {
                         if let Some(ph) = self.get_pluginizable_connection().map(|pc| pc.get_ph_mut()) {
                             ph.call_direct(
                                 & #po_code,
-                                pluginop::common::Anchor::Post,
+                                pluginop::common::Anchor::After,
                                 params.as_ref().unwrap(),
                             ).ok();
                         }
@@ -331,7 +335,7 @@ fn get_out_param_block(
             use pluginop::octets::OctetsPtr;
             let ph = self.get_pluginizable_connection().map(|pc| pc.get_ph_mut());
             if let Some(ph) = ph {
-                if ph.provides(& #po(#param), pluginop::common::Anchor::Replace) {
+                if ph.provides(& #po(#param), pluginop::common::Anchor::Define) {
                     let params = & #param_code;
                     let res = ph.call(
                         & #po(#param),
@@ -341,22 +345,22 @@ fn get_out_param_block(
 
                     #ret_block
                 } else {
-                    let has_pre = ph.provides(& #po(#param), pluginop::common::Anchor::Pre);
-                    let has_post = ph.provides(& #po(#param), pluginop::common::Anchor::Post);
-                    let params = if has_pre || has_post { Some(#param_code_prepost) } else { None };
-                    if has_pre {
+                    let has_before = ph.provides(& #po(#param), pluginop::common::Anchor::Before);
+                    let has_after = ph.provides(& #po(#param), pluginop::common::Anchor::After);
+                    let params = if has_before || has_after { Some(#param_code_prepost) } else { None };
+                    if has_before {
                         ph.call_direct(
                             & #po(#param),
-                            pluginop::common::Anchor::Pre,
+                            pluginop::common::Anchor::Before,
                             params.as_ref().unwrap(),
                         ).ok();
                     }
                     let ret = self.#fn_name_internal(#(#fn_args,)*);
-                    if has_post {
+                    if has_after {
                         if let Some(ph) = self.get_pluginizable_connection().map(|pc| pc.get_ph_mut()) {
                             ph.call_direct(
                                 & #po(#param),
-                                pluginop::common::Anchor::Post,
+                                pluginop::common::Anchor::After,
                                 params.as_ref().unwrap(),
                             ).ok();
                         }
@@ -378,6 +382,8 @@ struct MacroSimpleArgs {
     value: Option<Expr>,
 }
 
+/// An attribute macro to transform a non-faillible function into a
+/// non-parametrized plugin operation.
 #[proc_macro_attribute]
 pub fn pluginop(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attrs = parse_macro_input!(attr as AttributeArgs);
@@ -398,6 +404,8 @@ pub fn pluginop(attr: TokenStream, item: TokenStream) -> TokenStream {
     out.into()
 }
 
+/// An attribute macro to transform a function returning a [`Result`] into a
+/// non-parametrized plugin operation.
 #[proc_macro_attribute]
 pub fn pluginop_result(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attrs = parse_macro_input!(attr as AttributeArgs);
@@ -426,6 +434,9 @@ struct MacroArgs {
     param: Ident,
 }
 
+/// An attribute macro to transform a non-faillible function into a
+/// parametrized plugin operation. One of the arguments of the function
+/// must act as the parameter of the plugin operation.
 #[proc_macro_attribute]
 pub fn pluginop_param(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attrs = parse_macro_input!(attr as AttributeArgs);
@@ -443,6 +454,9 @@ pub fn pluginop_param(attr: TokenStream, item: TokenStream) -> TokenStream {
     get_out_param_block(param, &base_fn, &po, &ret_block).into()
 }
 
+/// An attribute macro to transform a function returning a [`Result`] into a
+/// parametrized plugin operation. One of the arguments of the function
+/// must act as the parameter of the plugin operation.
 #[proc_macro_attribute]
 pub fn pluginop_result_param(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attrs = parse_macro_input!(attr as AttributeArgs);

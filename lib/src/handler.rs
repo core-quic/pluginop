@@ -1,3 +1,5 @@
+//! The handling of pluginization operations.
+
 use std::{
     marker::PhantomPinned,
     ops::{Deref, DerefMut},
@@ -13,8 +15,8 @@ use wasmer_compiler_singlepass::Singlepass;
 
 use crate::{
     api::{CTPError, ConnectionToPlugin},
-    plugin::{BytesContent, Env, Plugin},
-    Error, PluginizableConnection,
+    plugin::{Env, Plugin},
+    BytesContent, Error, PluginizableConnection,
 };
 
 use pluginop_rawptr::RawMutPtr;
@@ -54,7 +56,7 @@ impl<CTP: ConnectionToPlugin> PluginArray<CTP> {
     /// Returns the first plugin that provides an implementation for `po` with the implementing
     /// function, or `None` if there is not.
     fn get_first_plugin(&mut self, po: &PluginOp) -> Option<&mut Plugin<CTP>> {
-        self.iter_mut().find(|p| p.provides(po, Anchor::Replace))
+        self.iter_mut().find(|p| p.provides(po, Anchor::Define))
     }
 }
 
@@ -92,21 +94,6 @@ impl<CTP: ConnectionToPlugin> std::fmt::Debug for PluginHandler<CTP> {
     }
 }
 
-/// Permission that can be granted to plugins.
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq)]
-pub enum Permission {
-    /// Permission to save output (should be always granted)
-    Output,
-    /// Permission to store opaque values (should be always granted)
-    Opaque,
-    /// Permission to access the Connection state
-    ConnectionAccess,
-    /// Permission to access the write byte buffer
-    WriteBuffer,
-    /// Permission to access the read byte buffer
-    ReadBuffer,
-}
-
 /// A default implementation of a protocol operation proposed by the host implementation.
 pub struct ProtocolOperationDefault {
     // po: ProtoOp,
@@ -119,7 +106,7 @@ pub struct ProtocolOperationDefault {
 }
 
 impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
-    /// Creates a new `PluginHandler`, enabling the execution of `Plugin`s inserted on the fly to
+    /// Create a new [`PluginHandler`], enabling the execution of plugins inserted on the fly to
     /// customize the behavior of a connection.
     pub fn new(exports_func: fn(&mut Store, &FunctionEnv<Env<CTP>>) -> Exports) -> Self {
         Self {
@@ -136,7 +123,7 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         }
     }
 
-    /// Sets the pointer to the connection context. **This pointer must be `Pin`**.
+    /// Set the pointer to the connection context. **This pointer must be pinned**.
     pub fn set_pluginizable_connection(
         &mut self,
         conn: *const PluginizableConnection<CTP>,
@@ -173,8 +160,8 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
             .map_err(|e| Error::PluginLoadingError(format!("{:?}", e)))
     }
 
-    /// Attaches a new plugin whose bytecode is accessible through the provided path. Returns `true`
-    /// if the insertion succeeded, `false` otherwise.
+    /// Attach a new plugin whose bytecode is accessible through the provided path. Return whether
+    /// the insertion succeeded, or the related [`Error`] otherwise.
     ///
     /// If the insertion succeeds and the plugin provides an `init` function as a protocol
     /// operation, this function calls it. This can be useful to, e.g., initialize a plugin-specific
@@ -184,27 +171,23 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
     }
 
     /// To be used in testing code only.
+    #[doc(hidden)]
     pub fn insert_plugin_testing(&mut self, plugin_fname: &PathBuf) -> Result<(), Error> {
         self.insert_plugin_internal(plugin_fname, true)
     }
 
-    /// Returns whether there is any POST anchor in the handler.
-    pub fn has_post(&self) -> bool {
-        self.has_anchor[Anchor::Post.index()]
-    }
-
-    /// Returns whether there is a bytecode providing the plugin operation
+    /// Return whether there is a bytecode providing the plugin operation
     /// at the requested anchor.
     pub fn provides(&self, po: &PluginOp, anchor: Anchor) -> bool {
         self.has_anchor[anchor.index()] && self.plugins.provides(po, anchor)
     }
 
-    /// Returns the first timeout event required by a plugin.
+    /// Return the first timeout event required by a plugin.
     pub fn timeout(&self) -> Option<Instant> {
         self.plugins.iter().filter_map(|p| p.timeout()).min()
     }
 
-    /// Calls potential timeouts that fired since the provided time.
+    /// Call potential timeouts that fired since the provided time.
     ///
     /// If there were not firing timers, this method does nothing.
     pub fn on_timeout(&mut self, t: Instant) -> Result<(), Error> {
@@ -214,7 +197,7 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         Ok(())
     }
 
-    /// Gets an immutable reference to the serving connection.
+    /// Get an immutable reference to the serving connection.
     pub fn get_conn(&self) -> Option<&PluginizableConnection<CTP>> {
         if self.conn.is_null() {
             None
@@ -224,7 +207,7 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         }
     }
 
-    /// Gets an mutable reference to the serving connection.
+    /// Get an mutable reference to the serving connection.
     pub fn get_conn_mut(&mut self) -> Option<&mut PluginizableConnection<CTP>> {
         if self.conn.is_null() {
             None
@@ -234,7 +217,7 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         }
     }
 
-    /// Sets bytes content.
+    /// Set bytes content, to be available through a [`Bytes`] value by the plugin.
     pub fn add_bytes_content(&mut self, bc: BytesContent) -> Bytes {
         let tag = self.bytes_contents.len() as u64;
         let max_read_len = bc.read_len() as u64;
@@ -247,11 +230,15 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         }
     }
 
+    /// Clear the content made available to the plugin.
+    ///
+    /// This method must always be called once the plugin operation call completes.
+    /// This is automatically done by the helping macros.
     pub fn clear_bytes_content(&mut self) {
         self.bytes_contents.clear();
     }
 
-    /// Gets a mutable reference on the `BytesContent` with tag `tag`.
+    /// Get a mutable reference on the [`BytesContent`] with the associtated `tag`.
     pub(crate) fn get_mut_bytes_content(
         &mut self,
         tag: usize,
@@ -259,19 +246,22 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         self.bytes_contents.get_mut(tag).ok_or(CTPError::BadBytes)
     }
 
-    /// Registers some plugin content.
+    /// Register some plugin [`Registration`].
     pub fn add_registration(&mut self, r: Registration) {
         self.registrations.push(r);
     }
 
+    /// Return all the [`Registration`]s that are known by the pluginization handler.
     pub fn get_registrations(&self) -> &[Registration] {
         &self.registrations
     }
 
+    /// Clone the plugin environment engine.
     pub(crate) fn get_cloned_engine(&self) -> Engine {
         self.engine.clone()
     }
 
+    /// Return the set of exported functions.
     pub(crate) fn get_export_func(&self) -> fn(&mut Store, &FunctionEnv<Env<CTP>>) -> Exports {
         self.exports_func
     }
@@ -299,14 +289,14 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         for p in self
             .plugins
             .iter_mut()
-            .filter(|p| p.provides(po, Anchor::Pre))
+            .filter(|p| p.provides(po, Anchor::Before))
         {
-            p.call(po, Anchor::Pre, params)?;
+            p.call(po, Anchor::Before, params)?;
         }
 
         // REPLACE part
         let res = match self.plugins.get_first_plugin(po) {
-            Some(p) => p.call(po, Anchor::Replace, params)?,
+            Some(p) => p.call(po, Anchor::Define, params)?,
             None => {
                 match pod {
                     Some(_pod) => {
@@ -332,22 +322,27 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         for p in self
             .plugins
             .iter_mut()
-            .filter(|p| p.provides(po, Anchor::Post))
+            .filter(|p| p.provides(po, Anchor::After))
         {
-            p.call(po, Anchor::Post, params)?;
+            p.call(po, Anchor::After, params)?;
         }
 
         Ok(res)
     }
 
-    /// Only for PRE or POST calls.
+    /// Only for BEFORE or AFTER calls.
     pub fn call_direct(
         &mut self,
         po: &PluginOp,
         anchor: Anchor,
         params: &[PluginVal],
     ) -> Result<(), Error> {
-        assert_ne!(anchor, Anchor::Replace);
+        assert_ne!(anchor, Anchor::Define);
+        if anchor == Anchor::Define {
+            return Err(Error::InternalError(
+                "call_direct only available for Before or After anchors.".to_string(),
+            ));
+        }
         for p in self.plugins.iter_mut().filter(|p| p.provides(po, anchor)) {
             p.call(po, anchor, params)?;
         }
@@ -355,7 +350,7 @@ impl<CTP: ConnectionToPlugin> PluginHandler<CTP> {
         Ok(())
     }
 
-    /// Invokes the protocol operation `po` and runs its anchors.
+    /// Invokes the plugin operation `po` and runs its anchors.
     pub fn call(&mut self, po: &PluginOp, params: &[PluginVal]) -> Result<Vec<PluginVal>, Error> {
         // trace!("Calling protocol operation {:?}", po);
 

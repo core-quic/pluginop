@@ -1,3 +1,5 @@
+//! Definition of the API offered to the plugins.
+
 use std::path::Path;
 
 use pluginop_common::{
@@ -11,10 +13,16 @@ use crate::{
     PluginizableConnection,
 };
 
+/// Errors that can occur during the conversion of structures between the host
+/// implementation and the plugins.
 pub enum CTPError {
+    /// Type mismatch with what is expected.
     BadType,
+    /// Something is wrong with the (de)serialization process.
     SerializeError,
+    /// The actual type being the `Bytes` token is wrong.
     BadBytes,
+    /// File system error.
     FileError,
 }
 

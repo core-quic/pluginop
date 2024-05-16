@@ -102,20 +102,20 @@ pub enum PluginOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Anchor {
     /// Execute just before calling the operation. Cannot modify the running context.
-    Pre,
+    Before,
     /// Execute in place of the operation. Can modify the running context.
-    Replace,
+    Define,
     /// Execute just after returning from the operation. Cannot modify the running context.
-    Post,
+    After,
 }
 
 impl Anchor {
     /// Returns an index value for the Anchor.
     pub fn index(&self) -> usize {
         match self {
-            Anchor::Pre => 0,
-            Anchor::Replace => 1,
-            Anchor::Post => 2,
+            Anchor::Before => 0,
+            Anchor::Define => 1,
+            Anchor::After => 2,
         }
     }
 }
@@ -131,11 +131,15 @@ impl PluginOp {
     /// FIXME find a more idiomatic way
     pub fn from_name(name: &str) -> (PluginOp, Anchor) {
         let (name, anchor) = if let Some(po_name) = name.strip_prefix("pre_") {
-            (po_name, Anchor::Pre)
+            (po_name, Anchor::Before)
+        } else if let Some(po_name) = name.strip_prefix("before_") {
+            (po_name, Anchor::Before)
         } else if let Some(po_name) = name.strip_prefix("post_") {
-            (po_name, Anchor::Post)
+            (po_name, Anchor::After)
+        } else if let Some(po_name) = name.strip_prefix("after_") {
+            (po_name, Anchor::After)
         } else {
-            (name, Anchor::Replace)
+            (name, Anchor::Define)
         };
 
         if name == "init" {
