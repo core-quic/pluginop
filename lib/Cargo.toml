@@ -1,8 +1,13 @@
 [package]
 name = "pluginop"
 version = "0.1.0"
-authors = ["Quentin De Coninck <quentin.deconinck@uclouvain.be>"]
+authors = ["Quentin De Coninck <quentin.deconinck@umons.ac.be>"]
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "A companion library to make a QUIC implementation pluginizable"
+homepage = "https://core-quic.github.io/"
+repository = "https://github.com/core-quic/pluginop"
+readme = "../README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,14 +16,14 @@ log = { version = "0.4", features = ["std"] }
 # Let use the single pass compiler, which is much faster than others
 wasmer = "4"
 wasmer-compiler-singlepass = "4"
-pluginop-common = { path = "../common" }
-pluginop-macro = { path = "../macro" }
+pluginop-common = { path = "../common", version = "=0.1.0" }
+pluginop-macro = { path = "../macro", version = "=0.1.0" }
 postcard = { version = "1", features = [] }
 fnv = "1"
 getrandom = "0.2"
 unix-time = "0.1"
-pluginop-octets = { path = "../octets" }
-pluginop-rawptr = { path = "../rawptr" }
+pluginop-octets = { path = "../octets", version = "=0.1.0" }
+pluginop-rawptr = { path = "../rawptr", version = "=0.1.0" }
 bytes = "1"
 
 [dev-dependencies]

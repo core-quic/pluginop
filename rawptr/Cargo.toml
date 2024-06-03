@@ -1,7 +1,12 @@
 [package]
 name = "pluginop-rawptr"
 version = "0.1.0"
+authors = ["Quentin De Coninck <quentin.deconinck@umons.ac.be>"]
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Safe abstractions atop raw pointers"
+homepage = "https://core-quic.github.io/"
+repository = "https://github.com/core-quic/pluginop"
 
 [dependencies]
 bytes = "1"

@@ -4,10 +4,10 @@ version = "0.1.0"
 authors = ["Alessandro Ghedini <alessandro@ghedini.me>", "Quentin De Coninck <quentin.deconinck@umons.ac.be>"]
 edition = "2018"
 description = "Zero-copy abstraction for parsing and constructing network packets"
-repository = "https://github.com/cloudflare/quiche"
+repository = "https://core-quic.github.io/"
 keywords = ["quic", "http3"]
 categories = ["network-programming"]
 license = "BSD-2-Clause"
 
 [dependencies]
-pluginop-rawptr = { path = "../rawptr" }
+pluginop-rawptr = { path = "../rawptr", version = "=0.1.0" }

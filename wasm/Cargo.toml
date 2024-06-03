@@ -1,13 +1,18 @@
 [package]
 name = "pluginop-wasm"
 version = "0.1.0"
-authors = ["Quentin De Coninck <quentin.deconinck@uclouvain.be>"]
+authors = ["Quentin De Coninck <quentin.deconinck@umons.ac.be>"]
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "The plugin-side library of pluginop"
+homepage = "https://core-quic.github.io/"
+repository = "https://github.com/core-quic/pluginop"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pluginop-common = { path = "../common" }
+pluginop-common = { path = "../common", version = "=0.1.0" }
 postcard = { version = "1", features = ["alloc"] }
 serde = { version = "1", features = ["derive"] }
 unix-time = "0.1"

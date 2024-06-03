@@ -1,8 +1,13 @@
 [package]
 name = "pluginop-common"
 version = "0.1.0"
-authors = ["Quentin De Coninck <quentin.deconinck@uclouvain.be>"]
+authors = ["Quentin De Coninck <quentin.deconinck@umons.ac.be>"]
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Common structures for the pluginop library"
+homepage = "https://core-quic.github.io/"
+repository = "https://github.com/core-quic/pluginop"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
